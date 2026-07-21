@@ -2,6 +2,8 @@
 
 一个用于玩法验证和作品集展示的 Unity 3D 第三人称无尽跑酷极简 Demo。
 
+产品名：`Rooftop Runner`
+
 当前版本目标是跑通最小闭环：开始游戏、自动前进、三车道切换、障碍生成、碰撞失败、距离计分、结算和一键重开。
 
 ## 环境
@@ -43,6 +45,8 @@ Runner/
 │   ├── Scripts/
 │   │   ├── EndlessRunnerGame.cs           # 核心玩法逻辑
 │   │   └── Runner.Runtime.asmdef          # 运行时程序集定义
+│   ├── Brand/
+│   │   └── AppIcon.png                    # macOS/TapTap 包体图标源图
 │   ├── Editor/
 │   │   └── RunnerBuild.cs                 # Editor 菜单和命令行构建脚本
 │   └── Tests/
@@ -85,6 +89,8 @@ Unity Editor 构建工具脚本。
 
 ```text
 Runner -> Build -> Mac Development
+Runner -> Build -> Mac Release
+Runner -> Build -> Mac Release Zip For TapTap
 ```
 
 也可通过命令行构建：
@@ -102,24 +108,46 @@ Runner -> Build -> Mac Development
 默认输出：
 
 ```text
-Builds/RooftopRunnerDemo.app
+Builds/RooftopRunner.app
+```
+
+TapTap macOS 上传包默认输出：
+
+```text
+Builds/RooftopRunner-mac-0.1.0.zip
 ```
 
 ### `Assets/Tests/PlayMode/EndlessRunnerSmokeTests.cs`
 
 PlayMode 冒烟测试，用于验证运行时能创建游戏控制器、玩家、主相机、世界根节点和基础可见几何体。
 
+### `Assets/Brand/AppIcon.png`
+
+应用图标源图。构建脚本会在 macOS Release 构建后把它转换成 `PlayerIcon.icns`，写入 `.app`，并重新做 ad-hoc 签名。
+
 ## 构建
 
 ### Unity 界面构建
 
-推荐使用统一菜单入口：
+推荐使用统一菜单入口。日常调试用：
 
 ```text
 Runner -> Build -> Mac Development
 ```
 
-该菜单会使用和命令行相同的构建逻辑。
+准备发布用：
+
+```text
+Runner -> Build -> Mac Release
+```
+
+准备 TapTap PC 上传包用：
+
+```text
+Runner -> Build -> Mac Release Zip For TapTap
+```
+
+这些菜单和命令行入口使用同一套构建逻辑。
 
 也可以使用 Unity 原生构建窗口：
 
@@ -137,6 +165,8 @@ Assets/Scenes/SampleScene.unity
 
 ### 命令行构建
 
+Development 构建：
+
 ```bash
 /Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
   -batchmode \
@@ -147,16 +177,40 @@ Assets/Scenes/SampleScene.unity
   -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
 ```
 
+Release 构建：
+
+```bash
+/Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
+  -batchmode \
+  -nographics \
+  -quit \
+  -projectPath /Users/lucas.l/Workspace/code/Runner \
+  -executeMethod RunnerBuild.BuildMacReleaseForCommandLine \
+  -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
+```
+
+Release 构建并生成 TapTap zip 包：
+
+```bash
+/Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
+  -batchmode \
+  -nographics \
+  -quit \
+  -projectPath /Users/lucas.l/Workspace/code/Runner \
+  -executeMethod RunnerBuild.BuildMacReleaseZipForTapTapCommandLine \
+  -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
+```
+
 运行构建产物：
 
 ```bash
-open /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunnerDemo.app
+open /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app
 ```
 
 以窗口模式运行：
 
 ```bash
-open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunnerDemo.app --args \
+open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
   -screen-fullscreen 0 \
   -screen-width 1280 \
   -screen-height 720 \
@@ -180,6 +234,108 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunnerDemo.app --args
 ```
 
 如果命令行提示项目已被另一个 Unity 实例打开，需要先关闭 Unity Editor，再重试。
+
+## TapTap macOS PC 项目侧适配
+
+当前项目只准备 macOS PC 端包体，不包含 Android/iOS 发布流程，也不包含 TapTap 开发者账号注册和后台提交流程。
+
+### 1. 生成 Release 上传包
+
+Unity 菜单：
+
+```text
+Runner -> Build -> Mac Release Zip For TapTap
+```
+
+或命令行：
+
+```bash
+/Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
+  -batchmode \
+  -nographics \
+  -quit \
+  -projectPath /Users/lucas.l/Workspace/code/Runner \
+  -executeMethod RunnerBuild.BuildMacReleaseZipForTapTapCommandLine \
+  -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
+```
+
+生成文件：
+
+```text
+Builds/RooftopRunner-mac-0.1.0.zip
+```
+
+### 2. 本机验包
+
+先运行 `.app`：
+
+```bash
+open /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app
+```
+
+确认：
+
+- 能看到开始界面
+- `Space` 能开始游戏
+- `A` / `D` 能切换车道
+- 撞障碍后能进入结算
+- `R` 能重开
+- Release 包没有 Development Build 水印
+
+### 3. 包体信息
+
+项目侧已经生成可上传包：
+
+```text
+Builds/RooftopRunner-mac-0.1.0.zip
+```
+
+macOS bundle 内部启动项路径：
+
+```text
+RooftopRunner.app/Contents/MacOS/Rooftop Runner
+```
+
+应用标识：
+
+```text
+com.hackcpp.rooftoprunner
+```
+
+版本号：
+
+```text
+0.1.0
+```
+
+### 4. 待补项目素材
+
+上 TapTap 前项目侧还建议补齐：
+
+- 图标
+- 启动画面或自定义 splash
+- 游戏截图：开始界面、跑酷中、失败结算
+- 隐私政策页面链接
+- 正式 Release 版本说明
+- Apple Developer ID 签名和 notarization，公开下载前建议补齐
+
+### 5. 当前项目配置
+
+构建脚本会写入：
+
+```text
+Product Name: Rooftop Runner
+Company Name: hackcpp
+Bundle Identifier: com.hackcpp.rooftoprunner
+Version: 0.1.0
+Icon: Assets/Brand/AppIcon.png
+```
+
+`ProjectSettings/EditorBuildSettings.asset` 中已加入入口场景：
+
+```text
+Assets/Scenes/SampleScene.unity
+```
 
 ## Unity 概念对应
 
