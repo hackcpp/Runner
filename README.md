@@ -1,6 +1,6 @@
-# Rooftop Runner Demo
+# Rooftop Runner
 
-一个用于玩法验证和作品集展示的 Unity 3D 第三人称无尽跑酷极简 Demo。
+一个用于玩法验证和作品集展示的 Unity 3D 第三人称无尽跑酷极简项目。
 
 产品名：`Rooftop Runner`
 
@@ -41,7 +41,7 @@
 Runner/
 ├── Assets/
 │   ├── Scenes/
-│   │   └── SampleScene.unity              # Demo 入口场景
+│   │   └── SampleScene.unity              # 项目入口场景
 │   ├── Scripts/
 │   │   ├── EndlessRunnerGame.cs           # 核心玩法逻辑
 │   │   └── Runner.Runtime.asmdef          # 运行时程序集定义
@@ -344,12 +344,12 @@ Assets/Scenes/SampleScene.unity
 - Component: 挂在 GameObject 上的功能模块，`EndlessRunnerGame` 就是脚本组件。
 - MonoBehaviour: Unity 脚本基类，提供 `Awake`、`Update`、`OnGUI` 等生命周期。
 - Transform: 控制对象位置、旋转、缩放。三车道切换本质上是改变玩家的 `x` 坐标。
-- Material: 控制物体颜色和表面显示效果。当前 Demo 的材质都由代码创建。
+- Material: 控制物体颜色和表面显示效果。当前版本的材质都由代码创建。
 - BuildPipeline: Unity Editor 构建 API，当前由 `RunnerBuild.cs` 调用。
 - asmdef: 程序集定义文件，用于组织运行时代码和测试代码。
 
 ## 当前实现特点
 
-这个 Demo 采用运行时生成场景的方式，不依赖外部模型资源。道路、障碍、城市建筑和角色都由基础 Primitive 动态创建。
+这个项目采用运行时生成场景的方式，不依赖外部模型资源。道路、障碍、城市建筑和角色都由基础 Primitive 动态创建。
 
 这种方式适合快速验证玩法；后续如果继续扩展，可以逐步拆分为角色控制、世界生成、UI、计分、状态机等独立模块，并引入 Prefab 和正式 UI。
