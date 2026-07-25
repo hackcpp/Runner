@@ -15,7 +15,7 @@
 - 目标平台：macOS 键盘操作
 - 游戏形态：三车道无尽跑酷作品集切片
 - 已验证基线：PlayMode `18/18`、macOS Release 通用二进制、`1280x720` 与 `1440x900` 窗口烟测
-- GitHub 基线提交：`039c2d5` (`Polish and validate Rooftop Runner`)
+- GitHub 基线提交：`dc0e676` (`Improve runner character motion feedback`)
 
 ## 总体进度
 
@@ -260,8 +260,8 @@
 | 2026-07-25 | 已完成 | 屋顶视觉识别升级；建立持续优化台账 | PlayMode `17/17`；对象池模拟、Release、签名与双尺寸烟测通过 | `03d0493` |
 | 2026-07-25 | 已完成 | Unity Personal 启动画面静态化与同色处理 | Release、Universal Binary、签名、冷启动与 Player 日志检查通过 | `03d0493` |
 | 2026-07-25 | 已完成 | 清理旧日志、IDE 生成文件、空目录和过期 TapTap ZIP | 当前 Release、源码、Unity 活跃缓存与 Git 修改均保留 | `43431d7` |
-| 2026-07-25 | 已完成 | 为 P1 至 P5 补充统一的难度和改动规模估算 | 按当前组件边界、代码行数和验证范围复核 | 待提交 |
-| 2026-07-25 | 已完成 | P1 角色轮廓与动作表现：程序化人物、状态姿态与动作效果 | PlayMode `18/18`；Release、Universal Binary、签名与双尺寸烟测通过 | 待提交 |
+| 2026-07-25 | 已完成 | 为 P1 至 P5 补充统一的难度和改动规模估算 | 按当前组件边界、代码行数和验证范围复核 | `dc0e676` |
+| 2026-07-25 | 已完成 | P1 角色轮廓与动作表现：程序化人物、状态姿态与动作效果 | PlayMode `18/18`；Release、Universal Binary、签名与双尺寸烟测通过 | `dc0e676` |
 
 ## 维护规则
 
