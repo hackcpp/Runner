@@ -1,10 +1,10 @@
 # Rooftop Runner
 
-一个用于玩法验证和作品集展示的 Unity 3D 第三人称无尽跑酷极简项目。
+一个用于作品集展示的 Unity 3D 第三人称无尽跑酷切片，强调三车道决策、跳跃、滑铲和连续动作反馈。
 
 产品名：`Rooftop Runner`
 
-当前版本目标是跑通最小闭环：开始游戏、自动前进、三车道切换、障碍生成、碰撞失败、距离计分、结算和一键重开。
+当前版本闭环为：开始游戏、自动前进、三车道切换、跳跃、滑铲、分级障碍模式、动作奖励、碰撞失败、结算和一键重开。
 
 ## 环境
 
@@ -33,6 +33,8 @@
 - `Space` / `Return`: 开始游戏
 - `A` / `Left Arrow`: 向左切换一条车道
 - `D` / `Right Arrow`: 向右切换一条车道
+- `Space` / `W` / `Up Arrow`: 跳跃
+- `S` / `Down Arrow`: 滑铲
 - `R` / `Space`: 失败后重开
 
 ## 目录结构
@@ -43,7 +45,11 @@ Runner/
 │   ├── Scenes/
 │   │   └── SampleScene.unity              # 项目入口场景
 │   ├── Scripts/
-│   │   ├── EndlessRunnerGame.cs           # 核心玩法逻辑
+│   │   ├── EndlessRunnerGame.cs           # 游戏流程、生成、计分和 UI
+│   │   ├── RunnerMotor.cs                 # 三车道、跳跃和滑铲运动
+│   │   ├── RunnerGameplay.cs              # 障碍规则、模式目录、奖励和分数
+│   │   ├── ProceduralRunnerMusic.cs       # 程序化背景音乐
+│   │   ├── ProceduralRunnerSfx.cs         # 程序化动作和碰撞音效
 │   │   └── Runner.Runtime.asmdef          # 运行时程序集定义
 │   ├── Brand/
 │   │   └── AppIcon.png                    # macOS/TapTap 包体图标源图
@@ -73,13 +79,23 @@ Runner/
 
 - 游戏状态：开始、游戏中、失败
 - 运行时创建角色、道路、城市背景和障碍
-- 三车道输入和插值移动
-- 自动前进和距离计分
+- 三车道输入、跳跃、滑铲和插值移动
+- 自动前进、距离计分和动作奖励
+- 教学障碍、分级障碍模式和固定种子生成
 - 前方世界生成和身后对象清理
-- 简单坐标碰撞判定
+- 按障碍类型区分的坐标碰撞判定
 - 固定斜角第三人称相机
+- 速度 FOV、动作提示和得分反馈
 - IMGUI 开始/结算界面
-- 最高分本地保存
+- 最佳距离和最佳分本地保存
+
+### `Assets/Scripts/RunnerMotor.cs`
+
+独立的角色运动组件。使用自定义坐标逻辑，不依赖 Rigidbody，负责换道、跳跃、滑铲、姿态动画和逻辑碰撞体高度。
+
+### `Assets/Scripts/RunnerGameplay.cs`
+
+集中保存 `Blocker`、`Hurdle`、`Overhead` 三类障碍规则，以及 12 个按距离分级的可学习障碍模式。模式使用固定种子时可以复现，便于测试。
 
 ### `Assets/Editor/RunnerBuild.cs`
 
