@@ -7,6 +7,8 @@ public sealed class ProceduralRunnerSfx
     private readonly AudioSource source;
     private readonly AudioClip jumpClip;
     private readonly AudioClip slideClip;
+    private readonly AudioClip footstepClip;
+    private readonly AudioClip landingClip;
     private readonly AudioClip clearClip;
     private readonly AudioClip crashClip;
 
@@ -21,6 +23,8 @@ public sealed class ProceduralRunnerSfx
 
         jumpClip = CreateTone("Runner Jump", 0.16f, 280f, 620f, 0.36f, false);
         slideClip = CreateTone("Runner Slide", 0.2f, 190f, 90f, 0.3f, true);
+        footstepClip = CreateTone("Runner Footstep", 0.075f, 118f, 72f, 0.2f, true);
+        landingClip = CreateTone("Runner Landing", 0.12f, 105f, 58f, 0.28f, true);
         clearClip = CreateTone("Runner Clear", 0.18f, 540f, 880f, 0.34f, false);
         crashClip = CreateTone("Runner Crash", 0.34f, 150f, 48f, 0.48f, true);
     }
@@ -40,6 +44,18 @@ public sealed class ProceduralRunnerSfx
     {
         source.pitch = 1f;
         source.PlayOneShot(slideClip);
+    }
+
+    public void PlayFootstep(int footSide)
+    {
+        source.pitch = footSide < 0 ? 0.94f : 1.04f;
+        source.PlayOneShot(footstepClip, 0.62f);
+    }
+
+    public void PlayLanding()
+    {
+        source.pitch = 1f;
+        source.PlayOneShot(landingClip, 0.82f);
     }
 
     public void PlayClear(int multiplier)

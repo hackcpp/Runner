@@ -37,6 +37,16 @@ public sealed class EndlessRunnerSmokeTests
         Assert.NotNull(RenderSettings.skybox, "The rooftop scene should configure its dusk skybox.");
         Assert.GreaterOrEqual(Object.FindObjectsOfType<MeshRenderer>().Length, 20, "Runtime world should contain visible geometry.");
         Assert.NotNull(GameObject.Find("Runner").GetComponent<RunnerMotor>(), "Runner should use the dedicated motor component.");
+        Assert.NotNull(GameObject.Find("Runner").GetComponent<RunnerVisualRig>(), "Runner should use the dedicated visual rig.");
+        Assert.NotNull(GameObject.Find("Runner").GetComponent<RunnerMotionEffects>(), "Runner should use bounded motion effects.");
+        Assert.NotNull(GameObject.Find("Runner Head"), "The runner silhouette should contain a head.");
+        Assert.NotNull(GameObject.Find("Runner Torso"), "The runner silhouette should contain a torso.");
+        Assert.NotNull(GameObject.Find("Runner Left Arm"), "The runner silhouette should contain a left arm.");
+        Assert.NotNull(GameObject.Find("Runner Right Arm"), "The runner silhouette should contain a right arm.");
+        Assert.NotNull(GameObject.Find("Runner Left Leg"), "The runner silhouette should contain a left leg.");
+        Assert.NotNull(GameObject.Find("Runner Right Leg"), "The runner silhouette should contain a right leg.");
+        Assert.NotNull(GameObject.Find("Runner Visor"), "The runner should expose a clear forward-facing accent.");
+        Assert.NotNull(GameObject.Find("Runner Back Pack"), "The runner should expose a distinct rear silhouette.");
 
         AudioSource[] audioSources = game.GetComponents<AudioSource>();
         Assert.GreaterOrEqual(audioSources.Length, 2, "Music and one-shot sound effects should use separate sources.");
@@ -89,6 +99,94 @@ public sealed class EndlessRunnerSmokeTests
             0,
             Object.FindObjectsOfType<Collider>().Length,
             "Coordinate-based collision should not leave generated visual colliders in PhysX.");
+    }
+
+    [UnityTest]
+    public IEnumerator RunnerVisualsExposeDistinctPosesAndBoundedEffects()
+    {
+        GameObject runner = new GameObject("Visual Rig Test Runner");
+        GameObject visual = new GameObject("Visual");
+        visual.transform.SetParent(runner.transform);
+        GameObject body = new GameObject("Logic Body");
+        body.transform.SetParent(visual.transform);
+        GameObject shadow = new GameObject("Shadow");
+        shadow.transform.SetParent(runner.transform);
+
+        RunnerMotor motor = runner.AddComponent<RunnerMotor>();
+        motor.Configure(visual.transform, body.transform, shadow.transform, RunnerMotor.DefaultLaneWidth);
+
+        Shader shader = Shader.Find("Standard");
+        Assert.NotNull(shader);
+        Material primary = new Material(shader);
+        Material accent = new Material(shader);
+        Material dark = new Material(shader);
+
+        RunnerVisualRig rig = runner.AddComponent<RunnerVisualRig>();
+        rig.Configure(motor, visual.transform, primary, accent, dark);
+        RunnerMotionEffects effects = runner.AddComponent<RunnerMotionEffects>();
+        effects.Configure(motor, dark, accent, primary);
+
+        Collider[] visualColliders = visual.GetComponentsInChildren<Collider>(true);
+        for (int index = 0; index < visualColliders.Length; index++)
+        {
+            Assert.IsFalse(visualColliders[index].enabled, "Visual body parts must never enter PhysX.");
+        }
+
+        motor.Tick(0f, 0.02f);
+        rig.Tick(16f, true, 0.13f);
+        Assert.AreEqual(RunnerActionState.Grounded, rig.PoseState);
+        Assert.IsTrue(rig.FootstepThisFrame, "Grounded running should produce a cadence event.");
+        effects.EmitFootstep(rig.FootstepSideThisFrame);
+        Assert.AreEqual(1, effects.FootstepEmissionCount);
+
+        int footstepCount = rig.TotalFootstepEvents;
+        rig.Tick(0f, false, 0.5f);
+        Assert.IsFalse(rig.FootstepThisFrame, "Idle or paused visuals must not produce footsteps.");
+        Assert.AreEqual(footstepCount, rig.TotalFootstepEvents);
+
+        motor.RequestJump();
+        motor.Tick(0f, 0.02f);
+        rig.Tick(16f, true, 0.02f);
+        effects.Tick(16f, true, 0.02f);
+        Assert.AreEqual(RunnerActionState.Airborne, rig.PoseState);
+        Assert.AreEqual(RunnerMotor.StandingBodyHeight, motor.BodyHeight, 0.001f);
+
+        bool landed = false;
+        for (int step = 0; step < 100 && !landed; step++)
+        {
+            motor.Tick(0f, 0.02f);
+            rig.Tick(16f, true, 0.02f);
+            effects.Tick(16f, true, 0.02f);
+            landed = motor.LandedThisFrame;
+        }
+
+        Assert.IsTrue(landed);
+        Assert.Greater(rig.LandingPulse, 0f, "Landing should create a short visual rebound.");
+        Assert.AreEqual(1, effects.LandingEmissionCount, "Landing dust should emit once.");
+        Assert.AreEqual(RunnerMotor.StandingBodyHeight, motor.BodyHeight, 0.001f);
+
+        motor.RequestSlide();
+        motor.Tick(0f, 0.02f);
+        rig.Tick(16f, true, 0.02f);
+        effects.Tick(16f, true, 0.02f);
+        Assert.AreEqual(RunnerActionState.Sliding, rig.PoseState);
+        Assert.AreEqual(RunnerMotor.SlidingBodyHeight, motor.BodyHeight, 0.001f);
+        Assert.Greater(effects.SlideEmissionCount, 0, "Sliding should emit reusable spark particles.");
+        Assert.Greater(effects.TrailEmissionCount, 0, "A moving runner should emit a lightweight speed trail.");
+        Assert.Greater(effects.DustParticles.particleCount, 0);
+        Assert.Greater(effects.SparkParticles.particleCount, 0);
+
+        effects.ResetForRun();
+        Assert.AreEqual(0, effects.FootstepEmissionCount);
+        Assert.AreEqual(0, effects.LandingEmissionCount);
+        Assert.AreEqual(0, effects.SlideEmissionCount);
+        Assert.AreEqual(0, effects.TrailEmissionCount);
+
+        Object.Destroy(runner);
+        Object.Destroy(primary);
+        Object.Destroy(accent);
+        Object.Destroy(dark);
+        yield return null;
     }
 
     [UnityTest]

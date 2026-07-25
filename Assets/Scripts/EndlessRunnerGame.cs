@@ -52,6 +52,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private GameObject playerBody;
     private GameObject playerShadow;
     private RunnerMotor runnerMotor;
+    private RunnerVisualRig runnerVisualRig;
+    private RunnerMotionEffects runnerMotionEffects;
     private RunnerHud runnerHud;
     private RunnerCameraRig cameraRig;
     private Camera gameCamera;
@@ -98,6 +100,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private bool tutorialGenerated;
 
     public RunnerMotor Motor => runnerMotor;
+    public RunnerVisualRig VisualRig => runnerVisualRig;
+    public RunnerMotionEffects MotionEffects => runnerMotionEffects;
     public int CurrentScore => RunnerScore.CalculateWithBonus(distance, combo.TotalBonusScore);
     public int ActionClearCount => actionClearCount;
     public int ActionBonusScore => combo.TotalBonusScore;
@@ -415,21 +419,9 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         playerVisualRoot = new GameObject("Runner Visual");
         playerVisualRoot.transform.SetParent(player.transform);
 
-        playerBody = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-        playerBody.name = "Runner Body";
+        playerBody = new GameObject("Runner Logic Body");
         playerBody.transform.SetParent(playerVisualRoot.transform);
         playerBody.transform.localPosition = new Vector3(0f, 0.8f, 0f);
-        playerBody.transform.localScale = new Vector3(0.72f, 0.92f, 0.72f);
-        RunnerWorldPool.RemovePhysicsCollider(playerBody);
-        SetMaterial(playerBody, playerMaterial);
-
-        GameObject visor = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        visor.name = "Runner Visor";
-        visor.transform.SetParent(playerVisualRoot.transform);
-        visor.transform.localPosition = new Vector3(0f, 1.56f, 0.26f);
-        visor.transform.localScale = new Vector3(0.56f, 0.18f, 0.18f);
-        RunnerWorldPool.RemovePhysicsCollider(visor);
-        SetMaterial(visor, playerAccentMaterial);
 
         playerShadow = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         playerShadow.name = "Runner Shadow";
@@ -445,6 +437,21 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             playerBody.transform,
             playerShadow.transform,
             LaneWidth);
+
+        runnerVisualRig = player.AddComponent<RunnerVisualRig>();
+        runnerVisualRig.Configure(
+            runnerMotor,
+            playerVisualRoot.transform,
+            playerMaterial,
+            playerAccentMaterial,
+            edgeMaterial);
+
+        runnerMotionEffects = player.AddComponent<RunnerMotionEffects>();
+        runnerMotionEffects.Configure(
+            runnerMotor,
+            parapetCapMaterial,
+            playerAccentMaterial,
+            playerMaterial);
     }
 
     private void CreateActionParticles()
@@ -500,6 +507,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         combo.Reset();
 
         runnerMotor.ResetForRun();
+        runnerVisualRig.ResetForRun();
+        runnerMotionEffects.ResetForRun();
         playerMaterial.color = RunnerColor;
         actionParticles.Clear();
 
@@ -515,6 +524,15 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             currentSpeed + Time.deltaTime * RunnerRunTuning.SpeedAcceleration);
 
         runnerMotor.Tick(currentSpeed);
+        runnerVisualRig.Tick(currentSpeed, true, Time.deltaTime);
+        runnerMotionEffects.Tick(currentSpeed, true, Time.deltaTime);
+
+        if (runnerVisualRig.FootstepThisFrame)
+        {
+            int footSide = runnerVisualRig.FootstepSideThisFrame;
+            soundEffects.PlayFootstep(footSide);
+            runnerMotionEffects.EmitFootstep(footSide);
+        }
 
         if (runnerMotor.JumpStartedThisFrame)
         {
@@ -539,6 +557,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         if (runnerMotor.LandedThisFrame)
         {
             cameraRig.TriggerImpact(0.08f, 0.45f);
+            soundEffects.PlayLanding();
         }
 
         distance = Mathf.Max(distance, player.transform.position.z);
@@ -546,6 +565,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     private void AnimateIdlePlayer()
     {
+        runnerVisualRig.Tick(0f, false, Time.deltaTime);
         playerVisualRoot.transform.localPosition = new Vector3(0f, Mathf.Sin(Time.time * 3f) * 0.03f, 0f);
         playerVisualRoot.transform.localRotation = Quaternion.identity;
         playerVisualRoot.transform.localScale = Vector3.one;

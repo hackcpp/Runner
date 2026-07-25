@@ -62,6 +62,8 @@ Runner/
 │   ├── Scripts/
 │   │   ├── EndlessRunnerGame.cs           # 游戏流程、生成、计分和 UI
 │   │   ├── RunnerMotor.cs                 # 三车道、跳跃和滑铲运动
+│   │   ├── RunnerVisualRig.cs             # 程序化人物骨架和状态姿态
+│   │   ├── RunnerMotionEffects.cs         # 脚步、尘雾、火花和速度拖尾
 │   │   ├── RunnerGameplay.cs              # 障碍规则、模式目录、奖励和分数
 │   │   ├── RunnerRunSimulation.cs         # 完整跑局生成和生存路径模拟
 │   │   ├── RunnerHud.cs                   # 响应式 Canvas HUD 和状态面板
@@ -113,6 +115,14 @@ Runner/
 ### `Assets/Scripts/RunnerMotor.cs`
 
 独立的角色运动组件。使用自定义坐标逻辑，不依赖 Rigidbody，负责换道、跳跃、滑铲、姿态动画和逻辑碰撞体高度。支持落地前跳跃/滑铲缓冲和单步换道输入队列。
+
+### `Assets/Scripts/RunnerVisualRig.cs`
+
+程序化低多边形人物组件。运行时创建头、躯干、髋部和四肢，通过面罩与背部装饰明确朝向，并根据 `RunnerMotor` 状态表现跑步摆臂、换道侧倾、腾空、落地回弹和滑铲姿态。视觉部件不参与 PhysX，也不修改逻辑碰撞高度。
+
+### `Assets/Scripts/RunnerMotionEffects.cs`
+
+角色动作粒子组件。复用固定的尘雾、滑铲火花和速度拖尾粒子系统，配合脚步节奏和落地事件触发，不在跑动过程中持续创建 GameObject。
 
 ### `Assets/Scripts/RunnerGameplay.cs`
 
@@ -286,11 +296,11 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
  -logFile /Users/lucas.l/Workspace/code/Runner/unity-playmode-test.log
 ```
 
-当前 PlayMode 冒烟套件共 17 项，覆盖角色输入缓冲、暂停恢复、完整障碍路径求解、5000 个种子的跨模式跑局模拟、无物理碰撞体约束、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
+当前 PlayMode 冒烟套件共 18 项，覆盖角色输入缓冲、程序化人物姿态与动作粒子、暂停恢复、完整障碍路径求解、5000 个种子的跨模式跑局模拟、无物理碰撞体约束、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
 
 ### 当前验证基线
 
-- PlayMode：`17/17` 通过
+- PlayMode：`18/18` 通过
 - 跑局公平性：连续验证 `5000` 个固定种子，每局 `1200m`，无无解序列
 - 长跑稳定性：约 `10` 分钟距离模拟后，活动几何体、障碍数量和对象池容量保持有界
 - macOS Release：`x86_64 + arm64` 通用二进制，版本 `0.1.0`

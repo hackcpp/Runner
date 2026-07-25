@@ -15,7 +15,7 @@ Rooftop Runner 是一个用于作品集展示的 Unity 3D 三车道无尽跑酷�
 - 产品版本：`0.1.0`
 - Bundle Identifier：`com.hackcpp.rooftoprunner`
 - 许可证：Unity Personal
-- 测试基线：PlayMode `17/17`
+- 测试基线：PlayMode `18/18`
 - Release：`x86_64 + arm64` Universal Binary，ad-hoc 签名
 
 除非用户明确扩大范围，不迁移到 Input System、URP、Rigidbody 控制、正式 UI 框架、移动端或手柄。
@@ -159,6 +159,7 @@ rg 'testcasecount|result="(Passed|Failed)"' unity-playmode-results.xml
 - 背景音乐与独立一次性音效
 - 教学障碍
 - 跳跃、落地、滑铲和输入缓冲
+- 程序化人物姿态、脚步节奏和动作粒子
 - 三类障碍碰撞规则
 - 单次动作奖励和连击
 - 全模式合法路径和固定种子稳定性

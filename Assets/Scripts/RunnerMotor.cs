@@ -259,9 +259,9 @@ public sealed class RunnerMotor : MonoBehaviour
 
         if (State == RunnerActionState.Sliding)
         {
-            targetScale = new Vector3(1.08f, 0.54f, 1.22f);
-            targetPosition = new Vector3(0f, 0.1f, 0.2f);
-            targetRotation = Quaternion.Euler(68f, 0f, 0f);
+            targetScale = new Vector3(1.04f, 0.82f, 1.12f);
+            targetPosition = new Vector3(0f, 0.05f, 0.18f);
+            targetRotation = Quaternion.Euler(18f, 0f, 0f);
         }
         else if (State == RunnerActionState.Airborne)
         {
