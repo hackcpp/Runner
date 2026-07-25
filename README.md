@@ -6,6 +6,18 @@
 
 当前版本闭环为：开始游戏、自动前进、三车道切换、跳跃、滑铲、分级障碍模式、动作奖励、碰撞失败、结算和一键重开。
 
+## 作品集预览
+
+### 游戏中
+
+![Rooftop Runner 游戏中画面](Portfolio/Screenshots/gameplay.png)
+
+### 开始与暂停
+
+| 开始 | 暂停 |
+| --- | --- |
+| ![Rooftop Runner 开始界面](Portfolio/Screenshots/start.png) | ![Rooftop Runner 暂停界面](Portfolio/Screenshots/pause.png) |
+
 ## 环境
 
 - Unity: 2022.3.62f1c1
@@ -35,6 +47,7 @@
 - `D` / `Right Arrow`: 向右切换一条车道
 - `Space` / `W` / `Up Arrow`: 跳跃
 - `S` / `Down Arrow`: 滑铲
+- `Esc` / `P`: 暂停或继续
 - `R` / `Space`: 失败后重开
 
 ## 目录结构
@@ -48,6 +61,10 @@ Runner/
 │   │   ├── EndlessRunnerGame.cs           # 游戏流程、生成、计分和 UI
 │   │   ├── RunnerMotor.cs                 # 三车道、跳跃和滑铲运动
 │   │   ├── RunnerGameplay.cs              # 障碍规则、模式目录、奖励和分数
+│   │   ├── RunnerRunSimulation.cs         # 完整跑局生成和生存路径模拟
+│   │   ├── RunnerHud.cs                   # 响应式 Canvas HUD 和状态面板
+│   │   ├── RunnerCameraRig.cs             # 相机跟随、倾斜、FOV 和震动
+│   │   ├── RunnerWorldPool.cs             # 世界几何体和障碍根节点复用
 │   │   ├── ProceduralRunnerMusic.cs       # 程序化背景音乐
 │   │   ├── ProceduralRunnerSfx.cs         # 程序化动作和碰撞音效
 │   │   └── Runner.Runtime.asmdef          # 运行时程序集定义
@@ -84,19 +101,36 @@ Runner/
 - 教学障碍、分级障碍模式和固定种子生成
 - 完整生存路径验证和强制动作间距校验
 - 前方世界生成、身后对象清理和运行时几何体复用
+- 纯坐标碰撞，不让视觉几何体进入 PhysX
 - 按障碍类型区分的坐标碰撞判定
-- 固定斜角第三人称相机
-- 速度 FOV、动作提示和得分反馈
-- IMGUI 开始/结算界面
+- 带换道倾斜的固定斜角第三人称相机
+- 速度 FOV、动作提示、地面预警形状和得分反馈
+- 响应式 Canvas 开始、暂停、HUD 和结算界面
 - 最佳距离、最佳分和最佳连击本地保存
 
 ### `Assets/Scripts/RunnerMotor.cs`
 
-独立的角色运动组件。使用自定义坐标逻辑，不依赖 Rigidbody，负责换道、跳跃、滑铲、姿态动画和逻辑碰撞体高度。支持落地前跳跃缓冲和单步换道输入队列。
+独立的角色运动组件。使用自定义坐标逻辑，不依赖 Rigidbody，负责换道、跳跃、滑铲、姿态动画和逻辑碰撞体高度。支持落地前跳跃/滑铲缓冲和单步换道输入队列。
 
 ### `Assets/Scripts/RunnerGameplay.cs`
 
 集中保存 `Blocker`、`Hurdle`、`Overhead` 三类障碍规则、连击计分器，以及 12 个按距离分级的可学习障碍模式。模式使用固定种子时可以复现；路径求解器会按最高速度验证换道距离和动作间距。
+
+### `Assets/Scripts/RunnerRunSimulation.cs`
+
+纯 C# 跑局模拟器。复用运行时速度、教学距离和难度分档参数，能够从中心车道开始验证教学序列、随机模式及模式边界的完整生存路径。批量测试会覆盖 5000 个固定种子和 1200 米距离。
+
+### `Assets/Scripts/RunnerHud.cs`
+
+运行时创建的响应式 Canvas HUD，负责分数、距离、最佳分、连击进度、动作提示，以及开始、暂停和结算状态面板。
+
+### `Assets/Scripts/RunnerCameraRig.cs`
+
+独立管理相机跟随、速度 FOV、动作脉冲、换道倾斜和碰撞震动，避免相机反馈状态继续堆积在游戏主控制器中。
+
+### `Assets/Scripts/RunnerWorldPool.cs`
+
+集中管理道路、城市和障碍视觉对象的创建与回收，同时保证程序化视觉几何体不携带启用的物理碰撞体。
 
 ### `Assets/Editor/RunnerBuild.cs`
 
@@ -250,7 +284,16 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
  -logFile /Users/lucas.l/Workspace/code/Runner/unity-playmode-test.log
 ```
 
-当前 PlayMode 冒烟套件共 11 项，覆盖角色输入缓冲、完整障碍路径求解、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
+当前 PlayMode 冒烟套件共 17 项，覆盖角色输入缓冲、暂停恢复、完整障碍路径求解、5000 个种子的跨模式跑局模拟、无物理碰撞体约束、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
+
+### 当前验证基线
+
+- PlayMode：`17/17` 通过
+- 跑局公平性：连续验证 `5000` 个固定种子，每局 `1200m`，无无解序列
+- 长跑稳定性：约 `10` 分钟距离模拟后，活动几何体、障碍数量和对象池容量保持有界
+- macOS Release：`x86_64 + arm64` 通用二进制，版本 `0.1.0`
+- 签名：`codesign --verify --deep --strict` 通过
+- 窗口验证：`1280x720` 与 `1440x900` 下完成开始、换道、暂停、恢复和结算烟测
 
 如果命令行提示项目已被另一个 Unity 实例打开，需要先关闭 Unity Editor，再重试。
 

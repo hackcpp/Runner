@@ -8,6 +8,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         StartScreen,
         Playing,
+        Paused,
         GameOver
     }
 
@@ -24,9 +25,9 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     private const float LaneWidth = RunnerMotor.DefaultLaneWidth;
     private const float SegmentLength = 14f;
-    private const float LookAheadDistance = 90f;
+    private const float LookAheadDistance = RunnerRunTuning.LookAheadDistance;
     private const float CleanupDistance = 24f;
-    private const float StartingSpeed = 9.4f;
+    private const float StartingSpeed = RunnerRunTuning.StartingSpeed;
     private const float ObstacleDepthTolerance = 0.72f;
     private const float ObstacleLaneTolerance = 0.82f;
     private const string BestDistanceKey = "EndlessRunner.HighScore";
@@ -39,19 +40,19 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private readonly List<GameObject> roadSegments = new List<GameObject>();
     private readonly List<GameObject> cityBlocks = new List<GameObject>();
     private readonly List<Obstacle> obstacles = new List<Obstacle>();
-    private readonly Stack<GameObject> cubePool = new Stack<GameObject>();
-    private readonly Stack<GameObject> obstacleRootPool = new Stack<GameObject>();
     private readonly RunnerComboTracker combo = new RunnerComboTracker();
     private readonly Vector3 cameraOffset = new Vector3(0f, 7.2f, -9.5f);
 
     private GameState state;
     private GameObject worldRoot;
-    private GameObject worldPoolRoot;
+    private RunnerWorldPool worldPool;
     private GameObject player;
     private GameObject playerVisualRoot;
     private GameObject playerBody;
     private GameObject playerShadow;
     private RunnerMotor runnerMotor;
+    private RunnerHud runnerHud;
+    private RunnerCameraRig cameraRig;
     private Camera gameCamera;
     private Light sun;
     private ParticleSystem actionParticles;
@@ -75,15 +76,11 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private int actionFeedbackPoints;
     private int bestCombo;
     private int bestScore;
-    private int totalCreatedCubeCount;
-    private int totalCreatedObstacleRootCount;
     private int? nextRunSeed;
     private float nextPatternZ;
     private float distance;
     private float highScore;
     private float currentSpeed;
-    private float cameraFovPulse;
-    private float cameraImpactTimer;
     private float laneHintTimer;
     private float actionHintTimer;
     private float actionFeedbackTimer;
@@ -101,11 +98,12 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     public int BestCombo => bestCombo;
     public int ActiveObstacleCount => obstacles.Count;
     public int ActiveWorldCubeCount => CountActiveWorldCubes();
-    public int PooledCubeCount => cubePool.Count;
-    public int PooledObstacleRootCount => obstacleRootPool.Count;
-    public int TotalCreatedCubeCount => totalCreatedCubeCount;
-    public int TotalCreatedObstacleRootCount => totalCreatedObstacleRootCount;
+    public int PooledCubeCount => worldPool == null ? 0 : worldPool.PooledCubeCount;
+    public int PooledObstacleRootCount => worldPool == null ? 0 : worldPool.PooledObstacleRootCount;
+    public int TotalCreatedCubeCount => worldPool == null ? 0 : worldPool.TotalCreatedCubeCount;
+    public int TotalCreatedObstacleRootCount => worldPool == null ? 0 : worldPool.TotalCreatedObstacleRootCount;
     public float Distance => distance;
+    public bool IsPaused => state == GameState.Paused;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateGame()
@@ -129,6 +127,11 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         soundEffects = ProceduralRunnerSfx.AttachTo(gameObject);
         CreatePlayer();
         CreateActionParticles();
+        runnerHud = RunnerHud.AttachTo(
+            gameObject,
+            StartRunFromHud,
+            ResumeRun,
+            StartRunFromHud);
         ResetRun(GameState.StartScreen);
     }
 
@@ -157,6 +160,22 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             return;
         }
 
+        if (state == GameState.Paused)
+        {
+            if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.P))
+            {
+                ResumeRun();
+            }
+
+            return;
+        }
+
+        if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.P))
+        {
+            PauseRun();
+            return;
+        }
+
         AdvanceRunner();
         GenerateWorldAhead();
         CleanupWorldBehind();
@@ -166,89 +185,30 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         UpdateCamera();
     }
 
-    private void OnGUI()
+    private void LateUpdate()
     {
-        GUIStyle label = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 24,
-            normal = { textColor = Color.white }
-        };
-
-        GUIStyle compact = new GUIStyle(label)
-        {
-            fontSize = 16
-        };
-
-        GUIStyle small = new GUIStyle(compact)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            wordWrap = true
-        };
-
-        GUI.Label(new Rect(22f, 18f, 320f, 38f), "Score  " + CurrentScore, label);
-        GUI.Label(new Rect(22f, 54f, 320f, 28f), "Distance  " + Mathf.FloorToInt(distance) + " m", compact);
-        GUI.Label(new Rect(22f, 80f, 320f, 28f), "Best  " + bestScore, compact);
-
-        if (state == GameState.Playing)
-        {
-            DrawGameplayFeedback(label);
-            return;
-        }
-
-        float panelWidth = Mathf.Min(520f, Screen.width - 44f);
-        float panelHeight = state == GameState.StartScreen ? 248f : 326f;
-        Rect panel = new Rect(
-            (Screen.width - panelWidth) * 0.5f,
-            (Screen.height - panelHeight) * 0.5f,
-            panelWidth,
-            panelHeight);
-
-        Color previousColor = GUI.color;
-        GUI.color = new Color(0.04f, 0.06f, 0.08f, 0.82f);
-        GUI.DrawTexture(panel, Texture2D.whiteTexture);
-        GUI.color = previousColor;
-
-        GUIStyle title = new GUIStyle(label)
-        {
-            fontSize = 34,
-            fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter
-        };
-
-        GUILayout.BeginArea(new Rect(panel.x + 24f, panel.y + 22f, panel.width - 48f, panel.height - 44f));
-        GUILayout.Label(state == GameState.StartScreen ? "ROOFTOP RUNNER" : "RUN ENDED", title, GUILayout.Height(48f));
-        GUILayout.Space(10f);
-
-        if (state == GameState.StartScreen)
-        {
-            GUILayout.Label("Dodge. Jump. Slide. Keep your flow.", small, GUILayout.Height(42f));
-            GUILayout.Space(22f);
-
-            if (GUILayout.Button("Start Run", GUILayout.Height(46f)))
-            {
-                ResetRun(GameState.Playing);
-            }
-        }
-        else
-        {
-            GUILayout.Label("Score  " + CurrentScore, title, GUILayout.Height(46f));
-            GUILayout.Label("Distance  " + Mathf.FloorToInt(distance) + " m", small, GUILayout.Height(28f));
-            GUILayout.Label("Actions  " + actionClearCount + "    Best combo  x" + combo.HighestCombo, small, GUILayout.Height(28f));
-            GUILayout.Space(12f);
-
-            if (GUILayout.Button("Restart", GUILayout.Height(46f)))
-            {
-                ResetRun(GameState.Playing);
-            }
-        }
-
-        GUILayout.EndArea();
+        UpdateHud();
     }
 
     public void StartRunForTests(int seed)
     {
         nextRunSeed = seed;
         ResetRun(GameState.Playing);
+    }
+
+    private void StartRunFromHud()
+    {
+        ResetRun(GameState.Playing);
+    }
+
+    public void PauseForTests()
+    {
+        PauseRun();
+    }
+
+    public void ResumeForTests()
+    {
+        ResumeRun();
     }
 
     public void AdvanceWorldForTests(float meters)
@@ -267,87 +227,67 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         CleanupWorldBehind();
     }
 
-    private void DrawGameplayFeedback(GUIStyle label)
+    private void UpdateHud()
     {
+        if (runnerHud == null)
+        {
+            return;
+        }
+
+        RunnerHudMode mode = state == GameState.StartScreen
+            ? RunnerHudMode.Start
+            : state == GameState.Playing
+                ? RunnerHudMode.Playing
+                : state == GameState.Paused
+                    ? RunnerHudMode.Paused
+                    : RunnerHudMode.GameOver;
+
+        string hintSymbol = null;
+        float hintAlpha = 0f;
         if (laneHintTimer > 0f)
         {
-            DrawCenteredSymbol("\u2190    \u2192", label);
+            hintSymbol = "\u2190    \u2192";
+            hintAlpha = Mathf.Clamp01(laneHintTimer * 2f);
         }
         else if (actionHintTimer > 0f && !string.IsNullOrEmpty(actionHintSymbol))
         {
-            DrawCenteredSymbol(actionHintSymbol, label);
+            hintSymbol = actionHintSymbol;
+            hintAlpha = Mathf.Clamp01(actionHintTimer * 2f);
         }
 
-        if (actionFeedbackTimer > 0f)
-        {
-            GUIStyle feedback = new GUIStyle(label)
-            {
-                fontSize = 26,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = new Color(1f, 0.86f, 0.24f, Mathf.Clamp01(actionFeedbackTimer * 2f)) }
-            };
-
-            string comboSuffix = combo.Multiplier > 1 ? "  x" + combo.Multiplier : string.Empty;
-            GUI.Label(
-                new Rect(Screen.width * 0.5f - 110f, Screen.height * 0.28f, 220f, 46f),
-                "+" + actionFeedbackPoints + comboSuffix,
-                feedback);
-        }
-
-        if (combo.ComboCount > 0)
-        {
-            GUIStyle comboStyle = new GUIStyle(label)
-            {
-                fontSize = 20,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = new Color(1f, 0.86f, 0.24f) }
-            };
-
-            float width = 150f;
-            float x = (Screen.width - width) * 0.5f;
-            GUI.Label(new Rect(x, 20f, width, 28f), "COMBO  x" + combo.Multiplier, comboStyle);
-
-            Color previousColor = GUI.color;
-            GUI.color = new Color(0f, 0f, 0f, 0.42f);
-            GUI.DrawTexture(new Rect(x, 51f, width, 5f), Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.82f, 0.18f, 0.92f);
-            float remainingAmount = Mathf.Clamp01(combo.RemainingTime / RunnerComboTracker.ComboWindow);
-            GUI.DrawTexture(new Rect(x, 51f, width * remainingAmount, 5f), Texture2D.whiteTexture);
-            GUI.color = previousColor;
-        }
-    }
-
-    private void DrawCenteredSymbol(string symbol, GUIStyle baseStyle)
-    {
-        GUIStyle hint = new GUIStyle(baseStyle)
-        {
-            fontSize = 42,
-            fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter,
-            normal = { textColor = new Color(1f, 0.92f, 0.42f, 0.94f) }
-        };
-
-        GUI.Label(new Rect(Screen.width * 0.5f - 100f, Screen.height * 0.62f, 200f, 60f), symbol, hint);
+        runnerHud.Render(new RunnerHudViewModel(
+            mode,
+            CurrentScore,
+            Mathf.FloorToInt(distance),
+            bestScore,
+            actionClearCount,
+            combo.HighestCombo,
+            combo.Multiplier,
+            combo.ComboCount > 0
+                ? Mathf.Clamp01(combo.RemainingTime / RunnerComboTracker.ComboWindow)
+                : 0f,
+            actionFeedbackPoints,
+            Mathf.Clamp01(actionFeedbackTimer * 2f),
+            hintSymbol,
+            hintAlpha));
     }
 
     private void CreateMaterials()
     {
         roadMaterial = CreateMaterial("Road", new Color(0.18f, 0.2f, 0.22f));
-        laneMaterial = CreateMaterial("Lane Markers", new Color(0.96f, 0.82f, 0.25f));
+        laneMaterial = CreateMaterial("Lane Markers", new Color(0.96f, 0.82f, 0.25f), 0.12f);
         edgeMaterial = CreateMaterial("Roof Edge", new Color(0.12f, 0.13f, 0.15f));
         playerMaterial = CreateMaterial("Player", RunnerColor);
         playerAccentMaterial = CreateMaterial("Player Accent", new Color(1f, 0.93f, 0.68f));
-        blockerMaterial = CreateMaterial("Blocker", new Color(0.92f, 0.18f, 0.16f));
-        hurdleMaterial = CreateMaterial("Hurdle", new Color(1f, 0.58f, 0.08f));
-        overheadMaterial = CreateMaterial("Overhead", new Color(0.58f, 0.22f, 0.72f));
+        blockerMaterial = CreateMaterial("Blocker", new Color(0.92f, 0.18f, 0.16f), 0.2f);
+        hurdleMaterial = CreateMaterial("Hurdle", new Color(1f, 0.58f, 0.08f), 0.2f);
+        overheadMaterial = CreateMaterial("Overhead", new Color(0.58f, 0.22f, 0.72f), 0.24f);
         buildingMaterialA = CreateMaterial("Building A", new Color(0.32f, 0.37f, 0.44f));
         buildingMaterialB = CreateMaterial("Building B", new Color(0.22f, 0.46f, 0.52f));
         roofMaterial = CreateMaterial("Roof Tops", new Color(0.11f, 0.16f, 0.18f));
     }
 
-    private Material CreateMaterial(string materialName, Color color)
+    private Material CreateMaterial(string materialName, Color color, float emissionStrength = 0f)
     {
         Shader shader = Shader.Find("Standard");
         if (shader == null)
@@ -355,18 +295,25 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             shader = Shader.Find("Diffuse");
         }
 
-        return new Material(shader)
+        Material material = new Material(shader)
         {
             name = materialName,
             color = color
         };
+
+        if (emissionStrength > 0f && material.HasProperty("_EmissionColor"))
+        {
+            material.EnableKeyword("_EMISSION");
+            material.SetColor("_EmissionColor", color * emissionStrength);
+        }
+
+        return material;
     }
 
     private void ConfigureScene()
     {
         worldRoot = new GameObject("Generated Runner World");
-        worldPoolRoot = new GameObject("Runner World Pool");
-        worldPoolRoot.transform.SetParent(worldRoot.transform);
+        worldPool = new RunnerWorldPool(worldRoot.transform);
 
         gameCamera = Camera.main;
         if (gameCamera == null)
@@ -381,6 +328,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         gameCamera.nearClipPlane = 0.1f;
         gameCamera.farClipPlane = 260f;
         gameCamera.backgroundColor = new Color(0.47f, 0.72f, 0.9f);
+        cameraRig = RunnerCameraRig.AttachTo(gameCamera, cameraOffset);
 
         RenderSettings.ambientLight = new Color(0.58f, 0.64f, 0.72f);
         RenderSettings.fog = true;
@@ -411,6 +359,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         playerBody.transform.SetParent(playerVisualRoot.transform);
         playerBody.transform.localPosition = new Vector3(0f, 0.8f, 0f);
         playerBody.transform.localScale = new Vector3(0.72f, 0.92f, 0.72f);
+        RunnerWorldPool.RemovePhysicsCollider(playerBody);
         SetMaterial(playerBody, playerMaterial);
 
         GameObject visor = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -418,6 +367,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         visor.transform.SetParent(playerVisualRoot.transform);
         visor.transform.localPosition = new Vector3(0f, 1.56f, 0.26f);
         visor.transform.localScale = new Vector3(0.56f, 0.18f, 0.18f);
+        RunnerWorldPool.RemovePhysicsCollider(visor);
         SetMaterial(visor, playerAccentMaterial);
 
         playerShadow = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -425,6 +375,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         playerShadow.transform.SetParent(player.transform);
         playerShadow.transform.localPosition = new Vector3(0f, 0.03f, 0f);
         playerShadow.transform.localScale = new Vector3(0.82f, 0.025f, 0.82f);
+        RunnerWorldPool.RemovePhysicsCollider(playerShadow);
         SetMaterial(playerShadow, edgeMaterial);
 
         runnerMotor = player.AddComponent<RunnerMotor>();
@@ -465,18 +416,18 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     private void ResetRun(GameState nextState)
     {
+        RestoreGlobalPauseState();
         state = nextState;
         distance = 0f;
         currentSpeed = StartingSpeed;
         nextSegmentIndex = -1;
-        nextPatternZ = 96f;
+        nextPatternZ = RunnerRunTuning.FirstRandomPatternZ;
         actionClearCount = 0;
         actionFeedbackPoints = RunnerScore.ActionClearPoints;
         laneHintTimer = nextState == GameState.Playing ? 2.4f : 0f;
         actionHintTimer = 0f;
         actionFeedbackTimer = 0f;
-        cameraFovPulse = 0f;
-        cameraImpactTimer = 0f;
+        cameraRig.ResetFeedback();
         actionHintSymbol = null;
         jumpHintShown = false;
         slideHintShown = false;
@@ -500,14 +451,14 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         currentSpeed = Mathf.Min(
             RunnerPatternCatalog.MaximumRunnerSpeed,
-            currentSpeed + Time.deltaTime * 0.16f);
+            currentSpeed + Time.deltaTime * RunnerRunTuning.SpeedAcceleration);
 
         runnerMotor.Tick(currentSpeed);
 
         if (runnerMotor.JumpStartedThisFrame)
         {
             soundEffects.PlayJump();
-            cameraFovPulse = Mathf.Max(cameraFovPulse, 1.1f);
+            cameraRig.PulseFieldOfView(1.1f);
             if (actionHintSymbol == "\u2191")
             {
                 actionHintTimer = 0f;
@@ -517,7 +468,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         if (runnerMotor.SlideStartedThisFrame)
         {
             soundEffects.PlaySlide();
-            cameraFovPulse = Mathf.Max(cameraFovPulse, 0.75f);
+            cameraRig.PulseFieldOfView(0.75f);
             if (actionHintSymbol == "\u2193")
             {
                 actionHintTimer = 0f;
@@ -526,7 +477,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
         if (runnerMotor.LandedThisFrame)
         {
-            cameraFovPulse = Mathf.Max(cameraFovPulse, 0.45f);
+            cameraRig.TriggerImpact(0.08f, 0.45f);
         }
 
         distance = Mathf.Max(distance, player.transform.position.z);
@@ -559,18 +510,27 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
         if (!tutorialGenerated)
         {
-            CreateObstacleMask(RunnerObstacleKind.Blocker, 1 << 1, 28f);
-            CreateObstacleMask(RunnerObstacleKind.Hurdle, 0b111, 48f);
-            CreateObstacleMask(RunnerObstacleKind.Overhead, 0b111, 70f);
+            CreateObstacleMask(
+                RunnerObstacleKind.Blocker,
+                1 << 1,
+                RunnerRunTuning.TutorialLaneChangeZ);
+            CreateObstacleMask(
+                RunnerObstacleKind.Hurdle,
+                0b111,
+                RunnerRunTuning.TutorialJumpZ);
+            CreateObstacleMask(
+                RunnerObstacleKind.Overhead,
+                0b111,
+                RunnerRunTuning.TutorialSlideZ);
             tutorialGenerated = true;
         }
 
         while (nextPatternZ < playerZ + LookAheadDistance)
         {
-            int tier = distance < 150f ? 0 : distance < 400f ? 1 : 2;
+            int tier = RunnerRunTuning.TierForDistance(distance);
             RunnerPatternDefinition pattern = patternSequence.Next(tier);
             CreatePattern(pattern, nextPatternZ);
-            nextPatternZ += pattern.Length + patternSequence.NextSpacing(currentSpeed);
+            nextPatternZ += pattern.Length + patternSequence.NextSpacing();
         }
     }
 
@@ -693,6 +653,12 @@ public sealed class EndlessRunnerGame : MonoBehaviour
                 new Vector3(x, 2.22f, z),
                 new Vector3(1.52f, 0.14f, 1.2f),
                 edgeMaterial);
+            CreateObstaclePart(
+                root,
+                "Blocker Approach Stripe",
+                new Vector3(x, 0.035f, z - 1.22f),
+                new Vector3(1.3f, 0.04f, 0.2f),
+                blockerMaterial);
         }
         else if (kind == RunnerObstacleKind.Hurdle)
         {
@@ -708,6 +674,18 @@ public sealed class EndlessRunnerGame : MonoBehaviour
                 new Vector3(x, 0.54f, z - 0.4f),
                 new Vector3(1.18f, 0.14f, 0.05f),
                 edgeMaterial);
+            CreateObstaclePart(
+                root,
+                "Hurdle Approach Stripe Wide",
+                new Vector3(x, 0.035f, z - 1.02f),
+                new Vector3(1.3f, 0.04f, 0.14f),
+                hurdleMaterial);
+            CreateObstaclePart(
+                root,
+                "Hurdle Approach Stripe Short",
+                new Vector3(x, 0.035f, z - 1.38f),
+                new Vector3(0.82f, 0.04f, 0.14f),
+                hurdleMaterial);
         }
         else
         {
@@ -728,6 +706,18 @@ public sealed class EndlessRunnerGame : MonoBehaviour
                 "Overhead Beam",
                 new Vector3(x, 1.55f, z),
                 new Vector3(1.52f, 0.46f, 0.82f),
+                overheadMaterial);
+            CreateObstaclePart(
+                root,
+                "Overhead Left Approach Rail",
+                new Vector3(x - 0.34f, 0.035f, z - 1.12f),
+                new Vector3(0.12f, 0.04f, 1.48f),
+                overheadMaterial);
+            CreateObstaclePart(
+                root,
+                "Overhead Right Approach Rail",
+                new Vector3(x + 0.34f, 0.035f, z - 1.12f),
+                new Vector3(0.12f, 0.04f, 1.48f),
                 overheadMaterial);
         }
 
@@ -808,7 +798,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         actionClearCount++;
         actionFeedbackPoints = combo.RegisterActionClear();
         actionFeedbackTimer = 0.72f;
-        cameraFovPulse = Mathf.Max(cameraFovPulse, 0.9f + combo.Multiplier * 0.12f);
+        cameraRig.PulseFieldOfView(0.9f + combo.Multiplier * 0.12f);
         actionParticles.transform.position = player.transform.position + new Vector3(0f, 0.9f, 0f);
         actionParticles.Emit(12 + combo.Multiplier * 3);
         soundEffects.PlayClear(combo.Multiplier);
@@ -827,9 +817,42 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
         playerMaterial.color = CrashColor;
         playerVisualRoot.transform.localRotation = Quaternion.Euler(72f, 0f, 18f);
-        cameraImpactTimer = 0.24f;
-        cameraFovPulse = 2f;
+        cameraRig.TriggerImpact(0.24f, 2f);
         soundEffects.PlayCrash();
+    }
+
+    private void PauseRun()
+    {
+        if (state != GameState.Playing)
+        {
+            return;
+        }
+
+        state = GameState.Paused;
+        Time.timeScale = 0f;
+        AudioListener.pause = true;
+    }
+
+    private void ResumeRun()
+    {
+        if (state != GameState.Paused)
+        {
+            return;
+        }
+
+        RestoreGlobalPauseState();
+        state = GameState.Playing;
+    }
+
+    private void OnDisable()
+    {
+        RestoreGlobalPauseState();
+    }
+
+    private void RestoreGlobalPauseState()
+    {
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
     }
 
     private void UpdateGameplayHints()
@@ -942,100 +965,36 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private void UpdateCamera(bool snap = false)
     {
         Vector3 playerPosition = player.transform.position;
-        Vector3 desiredPosition = playerPosition + cameraOffset;
-        if (cameraImpactTimer > 0f && !snap)
-        {
-            float shake = cameraImpactTimer / 0.24f;
-            desiredPosition += new Vector3(
-                Mathf.Sin(Time.unscaledTime * 82f) * 0.16f * shake,
-                Mathf.Cos(Time.unscaledTime * 67f) * 0.1f * shake,
-                0f);
-        }
-
-        float positionBlend = snap ? 1f : 1f - Mathf.Exp(-8f * Time.deltaTime);
-        gameCamera.transform.position = Vector3.Lerp(gameCamera.transform.position, desiredPosition, positionBlend);
-        gameCamera.transform.LookAt(playerPosition + new Vector3(0f, 1.1f, 8.5f));
-
         float speedAmount = state == GameState.Playing
             ? Mathf.InverseLerp(StartingSpeed, RunnerPatternCatalog.MaximumRunnerSpeed, currentSpeed)
             : 0f;
-        float targetFieldOfView = Mathf.Lerp(58f, 64f, speedAmount) + cameraFovPulse;
-        float fieldOfViewBlend = snap ? 1f : 1f - Mathf.Exp(-4f * Time.deltaTime);
-        gameCamera.fieldOfView = Mathf.Lerp(gameCamera.fieldOfView, targetFieldOfView, fieldOfViewBlend);
-        cameraFovPulse = Mathf.MoveTowards(cameraFovPulse, 0f, Time.deltaTime * 4.5f);
-        cameraImpactTimer = Mathf.Max(0f, cameraImpactTimer - Time.deltaTime);
+        float laneTargetX = runnerMotor == null ? playerPosition.x : LaneX(runnerMotor.Lane);
+        cameraRig.Tick(
+            playerPosition,
+            laneTargetX,
+            speedAmount,
+            state == GameState.Playing,
+            snap);
     }
 
     private GameObject CreateCube(string objectName, Vector3 position, Vector3 scale, Material material)
     {
-        GameObject cube;
-        if (cubePool.Count > 0)
-        {
-            cube = cubePool.Pop();
-        }
-        else
-        {
-            cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            totalCreatedCubeCount++;
-        }
-
-        cube.name = objectName;
-        cube.transform.SetParent(worldRoot.transform);
-        cube.transform.position = position;
-        cube.transform.rotation = Quaternion.identity;
-        cube.transform.localScale = scale;
-        SetMaterial(cube, material);
-        cube.SetActive(true);
-        return cube;
+        return worldPool.AcquireCube(objectName, position, scale, material);
     }
 
     private GameObject AcquireObstacleRoot(string objectName, Vector3 position)
     {
-        GameObject root;
-        if (obstacleRootPool.Count > 0)
-        {
-            root = obstacleRootPool.Pop();
-        }
-        else
-        {
-            root = new GameObject();
-            totalCreatedObstacleRootCount++;
-        }
-
-        root.name = objectName;
-        root.transform.SetParent(worldRoot.transform);
-        root.transform.position = position;
-        root.transform.rotation = Quaternion.identity;
-        root.transform.localScale = Vector3.one;
-        root.SetActive(true);
-        return root;
+        return worldPool.AcquireObstacleRoot(objectName, position);
     }
 
     private void ReleaseObstacleRoot(GameObject root)
     {
-        if (root == null)
-        {
-            return;
-        }
-
-        while (root.transform.childCount > 0)
-        {
-            ReleaseCube(root.transform.GetChild(root.transform.childCount - 1).gameObject);
-        }
-
-        root.SetActive(false);
-        root.transform.SetParent(worldPoolRoot.transform);
-        obstacleRootPool.Push(root);
+        worldPool.ReleaseObstacleRoot(root);
     }
 
     private void ReleaseCube(GameObject cube)
     {
-        cube.SetActive(false);
-        cube.transform.SetParent(worldPoolRoot.transform);
-        cube.transform.localPosition = Vector3.zero;
-        cube.transform.localRotation = Quaternion.identity;
-        cube.transform.localScale = Vector3.one;
-        cubePool.Push(cube);
+        worldPool.ReleaseCube(cube);
     }
 
     private int CountActiveWorldCubes()

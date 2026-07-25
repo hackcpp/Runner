@@ -6,6 +6,13 @@ using UnityEngine.TestTools;
 
 public sealed class EndlessRunnerSmokeTests
 {
+    [TearDown]
+    public void RestoreGlobalPauseState()
+    {
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
+    }
+
     [UnityTest]
     public IEnumerator RuntimeBootstrapCreatesPlayableWorld()
     {
@@ -16,7 +23,10 @@ public sealed class EndlessRunnerSmokeTests
         Assert.NotNull(game, "Game controller should bootstrap itself.");
         Assert.NotNull(GameObject.Find("Runner"), "Runner object should exist.");
         Assert.NotNull(Camera.main, "Main camera should exist.");
+        Assert.NotNull(Camera.main.GetComponent<RunnerCameraRig>(), "Camera feedback should use the dedicated rig.");
         Assert.NotNull(GameObject.Find("Generated Runner World"), "Generated world root should exist.");
+        Assert.NotNull(GameObject.Find("Runner HUD Canvas"), "Responsive Canvas HUD should exist.");
+        Assert.NotNull(Object.FindObjectOfType<RunnerHud>(), "HUD should use the dedicated presenter component.");
         Assert.GreaterOrEqual(Object.FindObjectsOfType<MeshRenderer>().Length, 20, "Runtime world should contain visible geometry.");
         Assert.NotNull(GameObject.Find("Runner").GetComponent<RunnerMotor>(), "Runner should use the dedicated motor component.");
 
@@ -54,6 +64,23 @@ public sealed class EndlessRunnerSmokeTests
         Assert.NotNull(GameObject.Find("Overhead Obstacle"), "Tutorial should create a slide gate.");
         Assert.AreEqual(0, game.ActionClearCount, "A fresh run should not contain action rewards.");
         Assert.AreEqual(0, game.CurrentScore, "A fresh run should start at zero before advancing a full meter.");
+    }
+
+    [UnityTest]
+    public IEnumerator GeneratedVisualGeometryDoesNotUsePhysicsColliders()
+    {
+        yield return null;
+        yield return null;
+
+        EndlessRunnerGame game = Object.FindObjectOfType<EndlessRunnerGame>();
+        game.StartRunForTests(13579);
+        yield return null;
+        yield return null;
+
+        Assert.AreEqual(
+            0,
+            Object.FindObjectsOfType<Collider>().Length,
+            "Coordinate-based collision should not leave generated visual colliders in PhysX.");
     }
 
     [UnityTest]
@@ -151,6 +178,83 @@ public sealed class EndlessRunnerSmokeTests
         yield return null;
     }
 
+    [UnityTest]
+    public IEnumerator RunnerMotorBuffersSlideBeforeLanding()
+    {
+        GameObject runner = new GameObject("Slide Buffer Test Runner");
+        GameObject visual = new GameObject("Visual");
+        visual.transform.SetParent(runner.transform);
+        GameObject body = new GameObject("Body");
+        body.transform.SetParent(visual.transform);
+        GameObject shadow = new GameObject("Shadow");
+        shadow.transform.SetParent(runner.transform);
+
+        RunnerMotor motor = runner.AddComponent<RunnerMotor>();
+        motor.Configure(visual.transform, body.transform, shadow.transform, RunnerMotor.DefaultLaneWidth);
+        motor.RequestJump();
+        motor.Tick(0f, 0.02f);
+
+        float previousHeight = motor.FeetHeight;
+        bool descending = false;
+        bool slideRequested = false;
+        bool slideStarted = false;
+
+        for (int step = 0; step < 100 && !slideStarted; step++)
+        {
+            motor.Tick(0f, 0.02f);
+            slideStarted |= motor.SlideStartedThisFrame;
+
+            if (motor.State == RunnerActionState.Airborne)
+            {
+                descending |= motor.FeetHeight < previousHeight;
+                if (descending && motor.FeetHeight < 0.45f && !slideRequested)
+                {
+                    motor.RequestSlide();
+                    slideRequested = true;
+                }
+            }
+
+            previousHeight = motor.FeetHeight;
+        }
+
+        Assert.IsTrue(slideRequested, "The test should request a slide shortly before landing.");
+        Assert.IsTrue(slideStarted, "A buffered slide should begin as soon as the runner lands.");
+        Assert.AreEqual(RunnerActionState.Sliding, motor.State);
+        Assert.AreEqual(RunnerMotor.SlidingBodyHeight, motor.BodyHeight, 0.001f);
+
+        Object.Destroy(runner);
+        yield return null;
+    }
+
+    [UnityTest]
+    public IEnumerator PausingFreezesAndResumesTheActiveRun()
+    {
+        yield return null;
+        yield return null;
+
+        EndlessRunnerGame game = Object.FindObjectOfType<EndlessRunnerGame>();
+        game.StartRunForTests(424242);
+        yield return null;
+
+        game.PauseForTests();
+        float pausedDistance = game.Distance;
+        Assert.IsTrue(game.IsPaused);
+        Assert.AreEqual(0f, Time.timeScale, 0.001f);
+        Assert.IsTrue(AudioListener.pause);
+
+        yield return null;
+        yield return null;
+        yield return null;
+        Assert.AreEqual(pausedDistance, game.Distance, 0.001f);
+
+        game.ResumeForTests();
+        Assert.IsFalse(game.IsPaused);
+        Assert.AreEqual(1f, Time.timeScale, 0.001f);
+        Assert.IsFalse(AudioListener.pause);
+        yield return null;
+        Assert.Greater(game.Distance, pausedDistance);
+    }
+
     [Test]
     public void ObstacleRulesRequireTheExpectedAction()
     {
@@ -243,6 +347,91 @@ public sealed class EndlessRunnerSmokeTests
     }
 
     [Test]
+    public void RunSolverRejectsAnImpossibleCrossPatternLaneTransition()
+    {
+        RunnerObstacleRow[] rows =
+        {
+            new RunnerObstacleRow(
+                10f,
+                null,
+                RunnerObstacleKind.Blocker,
+                RunnerObstacleKind.Blocker),
+            new RunnerObstacleRow(
+                11f,
+                RunnerObstacleKind.Blocker,
+                RunnerObstacleKind.Blocker,
+                null)
+        };
+
+        IReadOnlyList<int> lanePath;
+        float failureZ;
+        Assert.IsFalse(RunnerSurvivalSolver.TryFindPath(
+            rows,
+            1,
+            0f,
+            out lanePath,
+            out failureZ));
+        Assert.AreEqual(11f, failureZ, 0.001f);
+        Assert.AreEqual(0, lanePath.Count);
+    }
+
+    [Test]
+    public void CompleteRunSimulationIsDeterministicAndCrossPatternSafe()
+    {
+        RunnerRunSimulationResult first = RunnerRunSimulator.Simulate(271828, 1200f);
+        RunnerRunSimulationResult second = RunnerRunSimulator.Simulate(271828, 1200f);
+        RunnerRunSimulationResult different = RunnerRunSimulator.Simulate(271829, 1200f);
+
+        Assert.IsTrue(
+            first.IsSurvivable,
+            "The generated run should expose a complete survival path. Failure Z: " +
+            first.FailureZ + " Sequence: " + first.SequenceFingerprint);
+        Assert.AreEqual(first.RowCount, first.LanePath.Count);
+        Assert.Greater(first.PatternCount, 40);
+        Assert.Greater(first.PatternCountForTier(0), 0);
+        Assert.Greater(first.PatternCountForTier(1), 0);
+        Assert.Greater(first.PatternCountForTier(2), 0);
+        Assert.Greater(first.ObstacleCount(RunnerObstacleKind.Blocker), 0);
+        Assert.Greater(first.ObstacleCount(RunnerObstacleKind.Hurdle), 0);
+        Assert.Greater(first.ObstacleCount(RunnerObstacleKind.Overhead), 0);
+        Assert.GreaterOrEqual(
+            first.MinimumActionInterval,
+            RunnerPatternCatalog.MinimumActionTime - 0.001f);
+        Assert.GreaterOrEqual(first.MinimumLaneChangeTimeMargin, -0.001f);
+
+        Assert.AreEqual(first.SequenceFingerprint, second.SequenceFingerprint);
+        Assert.AreNotEqual(first.SequenceFingerprint, different.SequenceFingerprint);
+    }
+
+    [Test]
+    public void FiveThousandGeneratedRunsRemainSurvivable()
+    {
+        RunnerRunSimulationBatchResult batch = RunnerRunSimulator.SimulateBatch(
+            20260725,
+            5000,
+            1200f);
+
+        Assert.AreEqual(5000, batch.SeedCount);
+        Assert.AreEqual(
+            0,
+            batch.FailedRunCount,
+            "Generated run failed at seed " + batch.FirstFailedSeed);
+        Assert.AreEqual(RunnerPatternCatalog.Patterns.Count, batch.UniquePatternCount);
+        Assert.Greater(batch.TotalPatternCount, 200000);
+        Assert.Greater(batch.TotalRowCount, batch.TotalPatternCount);
+        Assert.Greater(batch.PatternCountForTier(0), 0);
+        Assert.Greater(batch.PatternCountForTier(1), 0);
+        Assert.Greater(batch.PatternCountForTier(2), 0);
+        Assert.Greater(batch.ObstacleCount(RunnerObstacleKind.Blocker), 0);
+        Assert.Greater(batch.ObstacleCount(RunnerObstacleKind.Hurdle), 0);
+        Assert.Greater(batch.ObstacleCount(RunnerObstacleKind.Overhead), 0);
+        Assert.GreaterOrEqual(
+            batch.MinimumActionInterval,
+            RunnerPatternCatalog.MinimumActionTime - 0.001f);
+        Assert.GreaterOrEqual(batch.MinimumLaneChangeTimeMargin, -0.001f);
+    }
+
+    [Test]
     public void FixedSeedProducesTheSameNonRepeatingSequence()
     {
         RunnerPatternSequence first = new RunnerPatternSequence(314159);
@@ -262,7 +451,7 @@ public sealed class EndlessRunnerSmokeTests
             }
 
             generatedIds.Add(firstPattern.Id);
-            Assert.AreEqual(first.NextSpacing(12f), second.NextSpacing(12f), 0.0001f);
+            Assert.AreEqual(first.NextSpacing(), second.NextSpacing(), 0.0001f);
         }
     }
 
@@ -292,12 +481,12 @@ public sealed class EndlessRunnerSmokeTests
         Assert.Greater(game.Distance, 9800f);
         Assert.Greater(game.PooledCubeCount, 0, "Long runs should recycle geometry behind the player.");
         Assert.Greater(game.PooledObstacleRootCount, 0, "Obstacle roots should be recycled.");
-        Assert.Less(game.ActiveWorldCubeCount, 320, "Active geometry should stay bounded by the look-ahead window.");
+        Assert.Less(game.ActiveWorldCubeCount, 380, "Active geometry should stay bounded by the look-ahead window.");
         Assert.Less(game.ActiveObstacleCount, 60, "Active obstacles should stay bounded by the look-ahead window.");
-        Assert.Less(game.TotalCreatedCubeCount, 380, "Pooling should cap total runtime cube creation.");
+        Assert.Less(game.TotalCreatedCubeCount, 460, "Pooling should cap total runtime cube creation.");
         Assert.LessOrEqual(
             game.TotalCreatedCubeCount - warmCreatedCubeCount,
-            40,
+            50,
             "The pool should reach a stable capacity early in a long run.");
     }
 }

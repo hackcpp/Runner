@@ -7,6 +7,7 @@ public sealed class RunnerMotor : MonoBehaviour
     public const float JumpVelocity = 8.8f;
     public const float Gravity = -24f;
     public const float JumpBufferDuration = 0.12f;
+    public const float SlideBufferDuration = 0.12f;
     public const float SlideDuration = 0.65f;
     public const float StandingBodyHeight = 1.82f;
     public const float SlidingBodyHeight = 0.76f;
@@ -17,6 +18,7 @@ public sealed class RunnerMotor : MonoBehaviour
     private float laneWidth;
     private float verticalVelocity;
     private float jumpBufferRemaining;
+    private float slideBufferRemaining;
     private float slideRemaining;
     private float landingFeedbackRemaining;
     private int queuedLaneDirection;
@@ -46,6 +48,7 @@ public sealed class RunnerMotor : MonoBehaviour
         Lane = 1;
         verticalVelocity = 0f;
         jumpBufferRemaining = 0f;
+        slideBufferRemaining = 0f;
         slideRemaining = 0f;
         landingFeedbackRemaining = 0f;
         queuedLaneDirection = 0;
@@ -73,7 +76,13 @@ public sealed class RunnerMotor : MonoBehaviour
 
     public void RequestSlide()
     {
+        if (State == RunnerActionState.Sliding)
+        {
+            return;
+        }
+
         slideRequested = true;
+        slideBufferRemaining = SlideBufferDuration;
     }
 
     public void RequestLaneChange(int direction)
@@ -116,6 +125,11 @@ public sealed class RunnerMotor : MonoBehaviour
             jumpBufferRemaining -= deltaTime;
         }
 
+        if (slideBufferRemaining > 0f)
+        {
+            slideBufferRemaining -= deltaTime;
+        }
+
         if (jumpRequested)
         {
             if (State != RunnerActionState.Sliding)
@@ -133,14 +147,13 @@ public sealed class RunnerMotor : MonoBehaviour
 
         if (slideRequested)
         {
-            if (State == RunnerActionState.Grounded)
-            {
-                State = RunnerActionState.Sliding;
-                slideRemaining = SlideDuration;
-                SlideStartedThisFrame = true;
-            }
-
+            slideBufferRemaining = SlideBufferDuration;
             slideRequested = false;
+        }
+
+        if (slideBufferRemaining > 0f && State == RunnerActionState.Grounded)
+        {
+            StartSlide();
         }
 
         if (State == RunnerActionState.Sliding)
@@ -179,6 +192,10 @@ public sealed class RunnerMotor : MonoBehaviour
                 {
                     StartJump();
                 }
+                else if (slideBufferRemaining > 0f)
+                {
+                    StartSlide();
+                }
             }
         }
         else
@@ -198,6 +215,7 @@ public sealed class RunnerMotor : MonoBehaviour
     public void FreezeVisuals()
     {
         jumpBufferRemaining = 0f;
+        slideBufferRemaining = 0f;
         jumpRequested = false;
         slideRequested = false;
         UpdateVisuals(Time.deltaTime);
@@ -312,5 +330,13 @@ public sealed class RunnerMotor : MonoBehaviour
         verticalVelocity = JumpVelocity;
         jumpBufferRemaining = 0f;
         JumpStartedThisFrame = true;
+    }
+
+    private void StartSlide()
+    {
+        State = RunnerActionState.Sliding;
+        slideRemaining = SlideDuration;
+        slideBufferRemaining = 0f;
+        SlideStartedThisFrame = true;
     }
 }
