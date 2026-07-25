@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 public sealed class EndlessRunnerGame : MonoBehaviour
 {
@@ -69,7 +70,14 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private Material overheadMaterial;
     private Material buildingMaterialA;
     private Material buildingMaterialB;
+    private Material buildingMaterialC;
     private Material roofMaterial;
+    private Material roofSeamMaterial;
+    private Material parapetMaterial;
+    private Material parapetCapMaterial;
+    private Material utilityMaterial;
+    private Material windowMaterial;
+    private Material skyboxMaterial;
 
     private int nextSegmentIndex;
     private int actionClearCount;
@@ -274,20 +282,31 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     private void CreateMaterials()
     {
-        roadMaterial = CreateMaterial("Road", new Color(0.18f, 0.2f, 0.22f));
-        laneMaterial = CreateMaterial("Lane Markers", new Color(0.96f, 0.82f, 0.25f), 0.12f);
-        edgeMaterial = CreateMaterial("Roof Edge", new Color(0.12f, 0.13f, 0.15f));
-        playerMaterial = CreateMaterial("Player", RunnerColor);
-        playerAccentMaterial = CreateMaterial("Player Accent", new Color(1f, 0.93f, 0.68f));
-        blockerMaterial = CreateMaterial("Blocker", new Color(0.92f, 0.18f, 0.16f), 0.2f);
-        hurdleMaterial = CreateMaterial("Hurdle", new Color(1f, 0.58f, 0.08f), 0.2f);
-        overheadMaterial = CreateMaterial("Overhead", new Color(0.58f, 0.22f, 0.72f), 0.24f);
-        buildingMaterialA = CreateMaterial("Building A", new Color(0.32f, 0.37f, 0.44f));
-        buildingMaterialB = CreateMaterial("Building B", new Color(0.22f, 0.46f, 0.52f));
-        roofMaterial = CreateMaterial("Roof Tops", new Color(0.11f, 0.16f, 0.18f));
+        roadMaterial = CreateMaterial("Rooftop Surface", new Color(0.16f, 0.17f, 0.19f), 0f, 0f, 0.1f);
+        laneMaterial = CreateMaterial("Signal Gold", new Color(0.96f, 0.72f, 0.18f), 0.18f, 0.05f, 0.22f);
+        edgeMaterial = CreateMaterial("Deep Graphite", new Color(0.07f, 0.09f, 0.11f), 0f, 0.05f, 0.12f);
+        playerMaterial = CreateMaterial("Player", RunnerColor, 0f, 0.05f, 0.32f);
+        playerAccentMaterial = CreateMaterial("Player Accent", new Color(1f, 0.86f, 0.52f), 0.1f, 0.05f, 0.4f);
+        blockerMaterial = CreateMaterial("Blocker", new Color(0.92f, 0.18f, 0.16f), 0.28f, 0.05f, 0.28f);
+        hurdleMaterial = CreateMaterial("Hurdle", new Color(1f, 0.52f, 0.06f), 0.26f, 0.05f, 0.28f);
+        overheadMaterial = CreateMaterial("Overhead", new Color(0.55f, 0.2f, 0.72f), 0.3f, 0.05f, 0.3f);
+        buildingMaterialA = CreateMaterial("Building Slate", new Color(0.24f, 0.29f, 0.35f), 0f, 0f, 0.1f);
+        buildingMaterialB = CreateMaterial("Building Teal", new Color(0.2f, 0.38f, 0.39f), 0f, 0f, 0.12f);
+        buildingMaterialC = CreateMaterial("Building Brick", new Color(0.4f, 0.27f, 0.3f), 0f, 0f, 0.1f);
+        roofMaterial = CreateMaterial("Roof Tops", new Color(0.09f, 0.12f, 0.14f), 0f, 0f, 0.08f);
+        roofSeamMaterial = CreateMaterial("Roof Seams", new Color(0.055f, 0.065f, 0.075f), 0f, 0f, 0.05f);
+        parapetMaterial = CreateMaterial("Parapet", new Color(0.35f, 0.37f, 0.38f), 0f, 0f, 0.12f);
+        parapetCapMaterial = CreateMaterial("Parapet Cap", new Color(0.62f, 0.57f, 0.49f), 0f, 0f, 0.16f);
+        utilityMaterial = CreateMaterial("Roof Utilities", new Color(0.38f, 0.47f, 0.49f), 0f, 0.25f, 0.2f);
+        windowMaterial = CreateMaterial("Warm Windows", new Color(1f, 0.5f, 0.16f), 0.72f, 0f, 0.18f);
     }
 
-    private Material CreateMaterial(string materialName, Color color, float emissionStrength = 0f)
+    private Material CreateMaterial(
+        string materialName,
+        Color color,
+        float emissionStrength = 0f,
+        float metallic = 0f,
+        float smoothness = 0.16f)
     {
         Shader shader = Shader.Find("Standard");
         if (shader == null)
@@ -305,6 +324,16 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             material.EnableKeyword("_EMISSION");
             material.SetColor("_EmissionColor", color * emissionStrength);
+        }
+
+        if (material.HasProperty("_Metallic"))
+        {
+            material.SetFloat("_Metallic", metallic);
+        }
+
+        if (material.HasProperty("_Glossiness"))
+        {
+            material.SetFloat("_Glossiness", smoothness);
         }
 
         return material;
@@ -327,15 +356,21 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         gameCamera.fieldOfView = 58f;
         gameCamera.nearClipPlane = 0.1f;
         gameCamera.farClipPlane = 260f;
-        gameCamera.backgroundColor = new Color(0.47f, 0.72f, 0.9f);
+        gameCamera.backgroundColor = new Color(0.24f, 0.34f, 0.45f);
         cameraRig = RunnerCameraRig.AttachTo(gameCamera, cameraOffset);
 
-        RenderSettings.ambientLight = new Color(0.58f, 0.64f, 0.72f);
+        ConfigureSkybox();
+        RenderSettings.ambientMode = AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor = new Color(0.48f, 0.57f, 0.68f);
+        RenderSettings.ambientEquatorColor = new Color(0.3f, 0.36f, 0.43f);
+        RenderSettings.ambientGroundColor = new Color(0.12f, 0.13f, 0.17f);
+        RenderSettings.ambientIntensity = 0.9f;
+        RenderSettings.reflectionIntensity = 0.38f;
         RenderSettings.fog = true;
-        RenderSettings.fogColor = new Color(0.47f, 0.72f, 0.9f);
+        RenderSettings.fogColor = new Color(0.27f, 0.36f, 0.46f);
         RenderSettings.fogMode = FogMode.Linear;
-        RenderSettings.fogStartDistance = 60f;
-        RenderSettings.fogEndDistance = 170f;
+        RenderSettings.fogStartDistance = 72f;
+        RenderSettings.fogEndDistance = 205f;
 
         sun = FindObjectOfType<Light>();
         if (sun == null)
@@ -344,8 +379,34 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         }
 
         sun.type = LightType.Directional;
-        sun.intensity = 1.25f;
-        sun.transform.rotation = Quaternion.Euler(48f, -35f, 12f);
+        sun.color = new Color(1f, 0.76f, 0.58f);
+        sun.intensity = 1.42f;
+        sun.shadows = LightShadows.Soft;
+        sun.shadowStrength = 0.72f;
+        sun.shadowBias = 0.06f;
+        sun.transform.rotation = Quaternion.Euler(32f, -38f, 8f);
+        RenderSettings.sun = sun;
+    }
+
+    private void ConfigureSkybox()
+    {
+        Shader skyboxShader = Shader.Find("Skybox/Procedural");
+        if (skyboxShader == null)
+        {
+            return;
+        }
+
+        skyboxMaterial = new Material(skyboxShader)
+        {
+            name = "Rooftop Dusk Sky"
+        };
+        skyboxMaterial.SetColor("_SkyTint", new Color(0.25f, 0.42f, 0.58f));
+        skyboxMaterial.SetColor("_GroundColor", new Color(0.16f, 0.13f, 0.18f));
+        skyboxMaterial.SetFloat("_AtmosphereThickness", 0.72f);
+        skyboxMaterial.SetFloat("_SunSize", 0.035f);
+        skyboxMaterial.SetFloat("_SunSizeConvergence", 7f);
+        skyboxMaterial.SetFloat("_Exposure", 1.08f);
+        RenderSettings.skybox = skyboxMaterial;
     }
 
     private void CreatePlayer()
@@ -558,44 +619,108 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         float centerZ = segmentIndex * SegmentLength + SegmentLength * 0.5f;
 
-        GameObject slab = CreateCube(
-            "Road Segment " + segmentIndex,
+        CreateTrackedCube(
+            roadSegments,
+            "Rooftop Slab " + segmentIndex,
             new Vector3(0f, -0.18f, centerZ),
-            new Vector3(7.4f, 0.36f, SegmentLength),
+            new Vector3(8.12f, 0.36f, SegmentLength),
             roadMaterial);
-        slab.transform.SetParent(worldRoot.transform);
-        roadSegments.Add(slab);
 
-        GameObject leftEdge = CreateCube(
-            "Left Roof Edge",
+        CreateTrackedCube(
+            roadSegments,
+            "Left Parapet",
             new Vector3(-4.05f, 0.24f, centerZ),
-            new Vector3(0.26f, 0.84f, SegmentLength),
-            edgeMaterial);
-        leftEdge.transform.SetParent(worldRoot.transform);
-        roadSegments.Add(leftEdge);
+            new Vector3(0.28f, 0.84f, SegmentLength),
+            parapetMaterial);
 
-        GameObject rightEdge = CreateCube(
-            "Right Roof Edge",
+        CreateTrackedCube(
+            roadSegments,
+            "Right Parapet",
             new Vector3(4.05f, 0.24f, centerZ),
-            new Vector3(0.26f, 0.84f, SegmentLength),
-            edgeMaterial);
-        rightEdge.transform.SetParent(worldRoot.transform);
-        roadSegments.Add(rightEdge);
+            new Vector3(0.28f, 0.84f, SegmentLength),
+            parapetMaterial);
 
-        for (int laneMarker = 0; laneMarker < 2; laneMarker++)
+        for (int side = -1; side <= 1; side += 2)
         {
-            float x = laneMarker == 0 ? -LaneWidth * 0.5f : LaneWidth * 0.5f;
-            for (int dash = 0; dash < 4; dash++)
-            {
-                GameObject marker = CreateCube(
-                    "Lane Dash",
-                    new Vector3(x, 0.03f, segmentIndex * SegmentLength + 1.7f + dash * 3.4f),
-                    new Vector3(0.08f, 0.05f, 1.42f),
-                    laneMaterial);
-                marker.transform.SetParent(worldRoot.transform);
-                roadSegments.Add(marker);
-            }
+            CreateTrackedCube(
+                roadSegments,
+                side < 0 ? "Left Parapet Cap" : "Right Parapet Cap",
+                new Vector3(side * 4.05f, 0.7f, centerZ),
+                new Vector3(0.46f, 0.1f, SegmentLength),
+                parapetCapMaterial);
+
+            CreateTrackedCube(
+                roadSegments,
+                "Roof Lane Seam",
+                new Vector3(side * LaneWidth * 0.5f, 0.026f, centerZ),
+                new Vector3(0.035f, 0.025f, SegmentLength),
+                roofSeamMaterial);
         }
+
+        CreateTrackedCube(
+            roadSegments,
+            "Roof Expansion Joint",
+            new Vector3(0f, 0.027f, segmentIndex * SegmentLength + 0.04f),
+            new Vector3(7.58f, 0.026f, 0.065f),
+            roofSeamMaterial);
+
+        CreatePlayableRoofFixture(segmentIndex, centerZ);
+    }
+
+    private void CreatePlayableRoofFixture(int segmentIndex, float centerZ)
+    {
+        int variant = Math.Abs(segmentIndex % 3);
+        float side = segmentIndex % 2 == 0 ? 1f : -1f;
+        float x = side * 3.42f;
+        float z = centerZ + (variant - 1) * 1.8f;
+
+        if (variant == 0)
+        {
+            CreateTrackedCube(
+                roadSegments,
+                "Rooftop HVAC Unit",
+                new Vector3(x, 0.24f, z),
+                new Vector3(0.82f, 0.48f, 1.12f),
+                utilityMaterial);
+            CreateTrackedCube(
+                roadSegments,
+                "Rooftop HVAC Fan",
+                new Vector3(x, 0.52f, z),
+                new Vector3(0.56f, 0.08f, 0.76f),
+                edgeMaterial);
+            return;
+        }
+
+        if (variant == 1)
+        {
+            GameObject skylight = CreateTrackedCube(
+                roadSegments,
+                "Rooftop Skylight",
+                new Vector3(x, 0.14f, z),
+                new Vector3(0.92f, 0.2f, 1.3f),
+                utilityMaterial);
+            skylight.transform.rotation = Quaternion.Euler(8f, 0f, 0f);
+            CreateTrackedCube(
+                roadSegments,
+                "Rooftop Skylight Base",
+                new Vector3(x, 0.055f, z),
+                new Vector3(1.06f, 0.1f, 1.44f),
+                edgeMaterial);
+            return;
+        }
+
+        CreateTrackedCube(
+            roadSegments,
+            "Rooftop Vent Stack",
+            new Vector3(x, 0.38f, z),
+            new Vector3(0.46f, 0.76f, 0.46f),
+            utilityMaterial);
+        CreateTrackedCube(
+            roadSegments,
+            "Rooftop Vent Cap",
+            new Vector3(x, 0.79f, z),
+            new Vector3(0.68f, 0.1f, 0.68f),
+            edgeMaterial);
     }
 
     private void CreateCitySlice(int segmentIndex)
@@ -607,31 +732,140 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             for (int index = 0; index < 3; index++)
             {
-                float width = RandomRange(random, 2.1f, 4.7f);
-                float depth = RandomRange(random, 3.4f, 7.6f);
-                float height = RandomRange(random, 2.2f, 9.2f);
-                float x = side * RandomRange(random, 8.5f, 18.5f);
+                float width = RandomRange(random, 3.2f + index, 5.4f + index * 1.4f);
+                float depth = RandomRange(random, 4.8f + index, 8.2f + index * 1.6f);
+                float height = RandomRange(random, 5.5f + index * 1.8f, 11.5f + index * 3.2f);
+                float minimumX = index == 0 ? 7.4f : index == 1 ? 12.2f : 20f;
+                float maximumX = index == 0 ? 10.4f : index == 1 ? 17.8f : 29f;
+                float x = side * RandomRange(random, minimumX, maximumX);
                 float z = centerZ + RandomRange(random, -SegmentLength * 0.45f, SegmentLength * 0.45f);
-                float y = -height * 0.5f - 0.65f;
+                float roofLevel = index == 0
+                    ? RandomRange(random, -3.1f, -0.8f)
+                    : index == 1
+                        ? RandomRange(random, -2.5f, 1.2f)
+                        : RandomRange(random, -3.8f, 5.2f);
+                float y = roofLevel - height * 0.5f;
 
-                Material material = random.NextDouble() > 0.5 ? buildingMaterialA : buildingMaterialB;
-                GameObject building = CreateCube(
+                double materialChoice = random.NextDouble();
+                Material material = materialChoice < 0.34
+                    ? buildingMaterialA
+                    : materialChoice < 0.68
+                        ? buildingMaterialB
+                        : buildingMaterialC;
+                CreateTrackedCube(
+                    cityBlocks,
                     "Background Building",
                     new Vector3(x, y, z),
                     new Vector3(width, height, depth),
                     material);
-                building.transform.SetParent(worldRoot.transform);
-                cityBlocks.Add(building);
 
-                GameObject roof = CreateCube(
+                CreateTrackedCube(
+                    cityBlocks,
                     "Background Roof",
-                    new Vector3(x, y + height * 0.5f + 0.04f, z),
-                    new Vector3(width * 1.04f, 0.08f, depth * 1.04f),
+                    new Vector3(x, roofLevel + 0.05f, z),
+                    new Vector3(width * 1.04f, 0.1f, depth * 1.04f),
                     roofMaterial);
-                roof.transform.SetParent(worldRoot.transform);
-                cityBlocks.Add(roof);
+
+                if (index == 0)
+                {
+                    CreateWindowBand(side, x, z, y, width, depth, height);
+
+                    int fixtureSide = segmentIndex % 2 == 0 ? 1 : -1;
+                    if (side == fixtureSide)
+                    {
+                        CreateBackgroundRoofFixture(segmentIndex, side, x, z, roofLevel, width, depth);
+                    }
+                }
             }
         }
+    }
+
+    private void CreateWindowBand(
+        int side,
+        float x,
+        float z,
+        float buildingCenterY,
+        float width,
+        float depth,
+        float height)
+    {
+        float bandY = buildingCenterY + height * 0.5f - Mathf.Min(1.35f, height * 0.22f);
+        GameObject windows = CreateTrackedCube(
+            cityBlocks,
+            "Lit Window Band",
+            new Vector3(x - side * (width * 0.5f + 0.035f), bandY, z),
+            new Vector3(0.07f, 0.24f, depth * 0.58f),
+            windowMaterial);
+        Renderer windowRenderer = windows.GetComponent<Renderer>();
+        if (windowRenderer != null)
+        {
+            windowRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            windowRenderer.receiveShadows = false;
+        }
+    }
+
+    private void CreateBackgroundRoofFixture(
+        int segmentIndex,
+        int side,
+        float roofX,
+        float roofZ,
+        float roofLevel,
+        float roofWidth,
+        float roofDepth)
+    {
+        int variant = Math.Abs((segmentIndex + (side > 0 ? 1 : 0)) % 3);
+        float x = roofX - side * Mathf.Min(0.7f, roofWidth * 0.18f);
+        float z = roofZ + Mathf.Min(0.8f, roofDepth * 0.16f);
+
+        if (variant == 0)
+        {
+            CreateTrackedCube(
+                cityBlocks,
+                "Background Water Tank",
+                new Vector3(x, roofLevel + 0.55f, z),
+                new Vector3(Mathf.Min(1.35f, roofWidth * 0.42f), 0.72f, Mathf.Min(1.08f, roofDepth * 0.28f)),
+                utilityMaterial);
+            for (int leg = -1; leg <= 1; leg += 2)
+            {
+                CreateTrackedCube(
+                    cityBlocks,
+                    "Water Tank Support",
+                    new Vector3(x + leg * 0.32f, roofLevel + 0.16f, z),
+                    new Vector3(0.12f, 0.32f, 0.12f),
+                    edgeMaterial);
+            }
+            return;
+        }
+
+        if (variant == 1)
+        {
+            CreateTrackedCube(
+                cityBlocks,
+                "Background HVAC",
+                new Vector3(x, roofLevel + 0.28f, z),
+                new Vector3(1.08f, 0.54f, 0.92f),
+                utilityMaterial);
+            CreateTrackedCube(
+                cityBlocks,
+                "Background HVAC Top",
+                new Vector3(x, roofLevel + 0.58f, z),
+                new Vector3(0.72f, 0.08f, 0.58f),
+                edgeMaterial);
+            return;
+        }
+
+        CreateTrackedCube(
+            cityBlocks,
+            "Background Antenna Mast",
+            new Vector3(x, roofLevel + 0.92f, z),
+            new Vector3(0.08f, 1.84f, 0.08f),
+            utilityMaterial);
+        CreateTrackedCube(
+            cityBlocks,
+            "Background Antenna Crossbar",
+            new Vector3(x, roofLevel + 1.52f, z),
+            new Vector3(0.82f, 0.07f, 0.07f),
+            utilityMaterial);
     }
 
     private void CreateObstacle(RunnerObstacleKind kind, int lane, float z)
@@ -980,6 +1214,19 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private GameObject CreateCube(string objectName, Vector3 position, Vector3 scale, Material material)
     {
         return worldPool.AcquireCube(objectName, position, scale, material);
+    }
+
+    private GameObject CreateTrackedCube(
+        List<GameObject> collection,
+        string objectName,
+        Vector3 position,
+        Vector3 scale,
+        Material material)
+    {
+        GameObject cube = CreateCube(objectName, position, scale, material);
+        cube.transform.SetParent(worldRoot.transform);
+        collection.Add(cube);
+        return cube;
     }
 
     private GameObject AcquireObstacleRoot(string objectName, Vector3 position)

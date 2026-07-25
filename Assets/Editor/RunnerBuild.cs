@@ -11,6 +11,7 @@ public static class RunnerBuild
     private const string AppOutputPath = "Builds/RooftopRunner.app";
     private const string TapTapZipPath = "Builds/RooftopRunner-mac-0.1.0.zip";
     private const string IconPath = "Assets/Brand/AppIcon.png";
+    private static readonly Color SplashBackgroundColor = new Color(0.055f, 0.07f, 0.11f);
     private static readonly string[] Scenes = { "Assets/Scenes/SampleScene.unity" };
 
     [MenuItem("Runner/Build/Mac Development")]
@@ -61,6 +62,7 @@ public static class RunnerBuild
         PlayerSettings.productName = ProductName;
         PlayerSettings.bundleVersion = Version;
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Standalone, BundleIdentifier);
+        ApplySplashScreenSettings();
 
         Texture2D icon = AssetDatabase.LoadAssetAtPath<Texture2D>(IconPath);
         if (icon == null)
@@ -69,6 +71,20 @@ public static class RunnerBuild
         }
 
         PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Standalone, new[] { icon });
+    }
+
+    private static void ApplySplashScreenSettings()
+    {
+        // Unity Personal requires its splash and logo, so keep them static and visually aligned with the game.
+        PlayerSettings.SplashScreen.show = true;
+        PlayerSettings.SplashScreen.showUnityLogo = true;
+        PlayerSettings.SplashScreen.animationMode = PlayerSettings.SplashScreen.AnimationMode.Static;
+        PlayerSettings.SplashScreen.unityLogoStyle = PlayerSettings.SplashScreen.UnityLogoStyle.LightOnDark;
+        PlayerSettings.SplashScreen.backgroundColor = SplashBackgroundColor;
+        PlayerSettings.SplashScreen.background = null;
+        PlayerSettings.SplashScreen.backgroundPortrait = null;
+        PlayerSettings.SplashScreen.blurBackgroundImage = false;
+        PlayerSettings.SplashScreen.overlayOpacity = 1f;
     }
 
     private static void PackageMacAppForTapTap()

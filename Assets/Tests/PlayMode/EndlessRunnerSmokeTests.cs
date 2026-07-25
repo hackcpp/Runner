@@ -27,6 +27,14 @@ public sealed class EndlessRunnerSmokeTests
         Assert.NotNull(GameObject.Find("Generated Runner World"), "Generated world root should exist.");
         Assert.NotNull(GameObject.Find("Runner HUD Canvas"), "Responsive Canvas HUD should exist.");
         Assert.NotNull(Object.FindObjectOfType<RunnerHud>(), "HUD should use the dedicated presenter component.");
+        Assert.NotNull(GameObject.Find("Rooftop Slab 0"), "The playable surface should read as a rooftop slab.");
+        Assert.NotNull(GameObject.Find("Left Parapet"), "Rooftops should have visible parapet walls.");
+        Assert.NotNull(GameObject.Find("Rooftop HVAC Unit"), "The playable roof should include utility silhouettes.");
+        Assert.NotNull(GameObject.Find("Background Water Tank"), "Background roofs should include recognizable equipment.");
+        Assert.NotNull(GameObject.Find("Lit Window Band"), "The skyline should include warm facade lights.");
+        Assert.IsNull(GameObject.Find("Lane Dash"), "Road-style dashed lane markings should not remain.");
+        Assert.IsTrue(RenderSettings.fog, "Layered skyline depth should retain distance fog.");
+        Assert.NotNull(RenderSettings.skybox, "The rooftop scene should configure its dusk skybox.");
         Assert.GreaterOrEqual(Object.FindObjectsOfType<MeshRenderer>().Length, 20, "Runtime world should contain visible geometry.");
         Assert.NotNull(GameObject.Find("Runner").GetComponent<RunnerMotor>(), "Runner should use the dedicated motor component.");
 
