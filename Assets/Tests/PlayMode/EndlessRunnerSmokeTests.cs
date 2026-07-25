@@ -101,6 +101,56 @@ public sealed class EndlessRunnerSmokeTests
         yield return null;
     }
 
+    [UnityTest]
+    public IEnumerator RunnerMotorBuffersLandingJumpAndQueuesLaneChanges()
+    {
+        GameObject runner = new GameObject("Buffered Motor Test Runner");
+        GameObject visual = new GameObject("Visual");
+        visual.transform.SetParent(runner.transform);
+        GameObject body = new GameObject("Body");
+        body.transform.SetParent(visual.transform);
+        GameObject shadow = new GameObject("Shadow");
+        shadow.transform.SetParent(runner.transform);
+
+        RunnerMotor motor = runner.AddComponent<RunnerMotor>();
+        motor.Configure(visual.transform, body.transform, shadow.transform, RunnerMotor.DefaultLaneWidth);
+
+        motor.RequestLaneChange(-1);
+        motor.Tick(0f, 0.02f);
+        motor.RequestLaneChange(1);
+
+        for (int step = 0; step < 24; step++)
+        {
+            motor.Tick(0f, 0.02f);
+        }
+
+        Assert.AreEqual(1, motor.Lane, "Queued opposite input should return the runner to the center lane.");
+        Assert.AreEqual(0f, runner.transform.position.x, 0.001f);
+
+        motor.RequestJump();
+        motor.Tick(0f, 0.02f);
+        for (int step = 0; step < 29; step++)
+        {
+            motor.Tick(0f, 0.02f);
+        }
+
+        motor.RequestJump();
+        bool landed = false;
+        bool bufferedJumpStarted = false;
+        for (int step = 0; step < 20; step++)
+        {
+            motor.Tick(0f, 0.02f);
+            landed |= motor.LandedThisFrame;
+            bufferedJumpStarted |= landed && motor.JumpStartedThisFrame;
+        }
+
+        Assert.IsTrue(landed, "The first jump should land.");
+        Assert.IsTrue(bufferedJumpStarted, "A jump requested shortly before landing should start after landing.");
+
+        Object.Destroy(runner);
+        yield return null;
+    }
+
     [Test]
     public void ObstacleRulesRequireTheExpectedAction()
     {
@@ -140,6 +190,25 @@ public sealed class EndlessRunnerSmokeTests
     }
 
     [Test]
+    public void ComboAwardsIncreasingBonusAndExpiresCleanly()
+    {
+        RunnerComboTracker combo = new RunnerComboTracker();
+
+        Assert.AreEqual(100, combo.RegisterActionClear());
+        Assert.AreEqual(200, combo.RegisterActionClear());
+        Assert.AreEqual(2, combo.Multiplier);
+        Assert.AreEqual(300, combo.TotalBonusScore);
+        Assert.AreEqual(347, RunnerScore.CalculateWithBonus(47.9f, combo.TotalBonusScore));
+
+        combo.Tick(RunnerComboTracker.ComboWindow + 0.01f);
+        Assert.AreEqual(0, combo.ComboCount);
+        Assert.AreEqual(1, combo.Multiplier);
+        Assert.AreEqual(100, combo.RegisterActionClear());
+        Assert.AreEqual(400, combo.TotalBonusScore);
+        Assert.AreEqual(2, combo.HighestCombo);
+    }
+
+    [Test]
     public void PatternCatalogIsValidAndContainsEnoughVariety()
     {
         Assert.GreaterOrEqual(RunnerPatternCatalog.Patterns.Count, 8);
@@ -148,7 +217,29 @@ public sealed class EndlessRunnerSmokeTests
         {
             RunnerPatternDefinition pattern = RunnerPatternCatalog.Patterns[index];
             Assert.IsTrue(RunnerPatternCatalog.IsPatternValid(pattern), "Invalid runner pattern: " + pattern.Id);
+
+            IReadOnlyList<int> lanePath;
+            Assert.IsTrue(RunnerPatternCatalog.TryFindSurvivalPath(pattern, out lanePath));
+            Assert.Greater(lanePath.Count, 0, "A valid pattern should expose a concrete lane path: " + pattern.Id);
         }
+    }
+
+    [Test]
+    public void PatternSolverRejectsUnreachableLaneAndActionTransitions()
+    {
+        RunnerPatternDefinition impossibleWeave = new RunnerPatternDefinition(
+            "impossible-weave",
+            0,
+            new RunnerPatternElement(RunnerObstacleKind.Blocker, 0b110, 0f),
+            new RunnerPatternElement(RunnerObstacleKind.Blocker, 0b011, 1f));
+        RunnerPatternDefinition impossibleActionSwitch = new RunnerPatternDefinition(
+            "impossible-action-switch",
+            0,
+            new RunnerPatternElement(RunnerObstacleKind.Hurdle, 0b111, 0f),
+            new RunnerPatternElement(RunnerObstacleKind.Overhead, 0b111, 10f));
+
+        Assert.IsFalse(RunnerPatternCatalog.IsPatternValid(impossibleWeave));
+        Assert.IsFalse(RunnerPatternCatalog.IsPatternValid(impossibleActionSwitch));
     }
 
     [Test]
@@ -173,5 +264,40 @@ public sealed class EndlessRunnerSmokeTests
             generatedIds.Add(firstPattern.Id);
             Assert.AreEqual(first.NextSpacing(12f), second.NextSpacing(12f), 0.0001f);
         }
+    }
+
+    [UnityTest]
+    public IEnumerator WorldPoolRemainsBoundedAcrossTenMinuteSimulation()
+    {
+        yield return null;
+        yield return null;
+
+        EndlessRunnerGame game = Object.FindObjectOfType<EndlessRunnerGame>();
+        game.StartRunForTests(20260725);
+        yield return null;
+
+        int simulationSteps = Mathf.CeilToInt(
+            RunnerPatternCatalog.MaximumRunnerSpeed * 600f / 14f);
+        int warmCreatedCubeCount = 0;
+
+        for (int step = 0; step < simulationSteps; step++)
+        {
+            game.AdvanceWorldForTests(14f);
+            if (step == 200)
+            {
+                warmCreatedCubeCount = game.TotalCreatedCubeCount;
+            }
+        }
+
+        Assert.Greater(game.Distance, 9800f);
+        Assert.Greater(game.PooledCubeCount, 0, "Long runs should recycle geometry behind the player.");
+        Assert.Greater(game.PooledObstacleRootCount, 0, "Obstacle roots should be recycled.");
+        Assert.Less(game.ActiveWorldCubeCount, 320, "Active geometry should stay bounded by the look-ahead window.");
+        Assert.Less(game.ActiveObstacleCount, 60, "Active obstacles should stay bounded by the look-ahead window.");
+        Assert.Less(game.TotalCreatedCubeCount, 380, "Pooling should cap total runtime cube creation.");
+        Assert.LessOrEqual(
+            game.TotalCreatedCubeCount - warmCreatedCubeCount,
+            40,
+            "The pool should reach a stable capacity early in a long run.");
     }
 }

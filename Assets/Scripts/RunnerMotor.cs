@@ -2,14 +2,14 @@ using UnityEngine;
 
 public sealed class RunnerMotor : MonoBehaviour
 {
+    public const float DefaultLaneWidth = 2.2f;
+    public const float LaneMoveSpeed = 13.5f;
     public const float JumpVelocity = 8.8f;
     public const float Gravity = -24f;
     public const float JumpBufferDuration = 0.12f;
     public const float SlideDuration = 0.65f;
     public const float StandingBodyHeight = 1.82f;
     public const float SlidingBodyHeight = 0.76f;
-
-    private const float LaneMoveSpeed = 13.5f;
 
     private Transform visualRoot;
     private Transform body;
@@ -19,6 +19,7 @@ public sealed class RunnerMotor : MonoBehaviour
     private float jumpBufferRemaining;
     private float slideRemaining;
     private float landingFeedbackRemaining;
+    private int queuedLaneDirection;
     private bool jumpRequested;
     private bool slideRequested;
 
@@ -47,6 +48,7 @@ public sealed class RunnerMotor : MonoBehaviour
         jumpBufferRemaining = 0f;
         slideRemaining = 0f;
         landingFeedbackRemaining = 0f;
+        queuedLaneDirection = 0;
         jumpRequested = false;
         slideRequested = false;
         JumpStartedThisFrame = false;
@@ -60,6 +62,11 @@ public sealed class RunnerMotor : MonoBehaviour
 
     public void RequestJump()
     {
+        if (State == RunnerActionState.Sliding)
+        {
+            return;
+        }
+
         jumpRequested = true;
         jumpBufferRemaining = JumpBufferDuration;
     }
@@ -67,6 +74,24 @@ public sealed class RunnerMotor : MonoBehaviour
     public void RequestSlide()
     {
         slideRequested = true;
+    }
+
+    public void RequestLaneChange(int direction)
+    {
+        int normalizedDirection = Mathf.Clamp(direction, -1, 1);
+        if (normalizedDirection == 0)
+        {
+            return;
+        }
+
+        if (IsLaneCentered())
+        {
+            Lane = Mathf.Clamp(Lane + normalizedDirection, 0, 2);
+        }
+        else
+        {
+            queuedLaneDirection = normalizedDirection;
+        }
     }
 
     public void Tick(float forwardSpeed)
@@ -93,16 +118,17 @@ public sealed class RunnerMotor : MonoBehaviour
 
         if (jumpRequested)
         {
-            jumpBufferRemaining = State == RunnerActionState.Grounded ? JumpBufferDuration : 0f;
+            if (State != RunnerActionState.Sliding)
+            {
+                jumpBufferRemaining = JumpBufferDuration;
+            }
+
             jumpRequested = false;
         }
 
         if (jumpBufferRemaining > 0f && State == RunnerActionState.Grounded)
         {
-            State = RunnerActionState.Airborne;
-            verticalVelocity = JumpVelocity;
-            jumpBufferRemaining = 0f;
-            JumpStartedThisFrame = true;
+            StartJump();
         }
 
         if (slideRequested)
@@ -130,6 +156,12 @@ public sealed class RunnerMotor : MonoBehaviour
         position.z += forwardSpeed * deltaTime;
         position.x = Mathf.MoveTowards(position.x, LaneX(Lane), LaneMoveSpeed * deltaTime);
 
+        if (Mathf.Abs(position.x - LaneX(Lane)) < 0.001f && queuedLaneDirection != 0)
+        {
+            Lane = Mathf.Clamp(Lane + queuedLaneDirection, 0, 2);
+            queuedLaneDirection = 0;
+        }
+
         if (State == RunnerActionState.Airborne)
         {
             verticalVelocity += Gravity * deltaTime;
@@ -142,6 +174,11 @@ public sealed class RunnerMotor : MonoBehaviour
                 State = RunnerActionState.Grounded;
                 LandedThisFrame = true;
                 landingFeedbackRemaining = 0.12f;
+
+                if (jumpBufferRemaining > 0f)
+                {
+                    StartJump();
+                }
             }
         }
         else
@@ -173,11 +210,11 @@ public sealed class RunnerMotor : MonoBehaviour
 
         if (moveLeft)
         {
-            Lane = Mathf.Max(0, Lane - 1);
+            RequestLaneChange(-1);
         }
         else if (moveRight)
         {
-            Lane = Mathf.Min(2, Lane + 1);
+            RequestLaneChange(1);
         }
 
         if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow))
@@ -262,5 +299,18 @@ public sealed class RunnerMotor : MonoBehaviour
     private float LaneX(int lane)
     {
         return (lane - 1) * laneWidth;
+    }
+
+    private bool IsLaneCentered()
+    {
+        return Mathf.Abs(transform.position.x - LaneX(Lane)) < 0.001f;
+    }
+
+    private void StartJump()
+    {
+        State = RunnerActionState.Airborne;
+        verticalVelocity = JumpVelocity;
+        jumpBufferRemaining = 0f;
+        JumpStartedThisFrame = true;
     }
 }

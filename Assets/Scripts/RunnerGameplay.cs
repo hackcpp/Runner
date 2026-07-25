@@ -71,6 +71,56 @@ public static class RunnerScore
     {
         return Math.Max(0, (int)Math.Floor(distance)) + Math.Max(0, actionClearCount) * ActionClearPoints;
     }
+
+    public static int CalculateWithBonus(float distance, int actionBonusScore)
+    {
+        return Math.Max(0, (int)Math.Floor(distance)) + Math.Max(0, actionBonusScore);
+    }
+}
+
+public sealed class RunnerComboTracker
+{
+    public const float ComboWindow = 3.2f;
+    public const int MaximumMultiplier = 4;
+
+    public int ComboCount { get; private set; }
+    public int HighestCombo { get; private set; }
+    public int TotalBonusScore { get; private set; }
+    public float RemainingTime { get; private set; }
+    public int Multiplier => Math.Min(MaximumMultiplier, Math.Max(1, ComboCount));
+
+    public int RegisterActionClear()
+    {
+        ComboCount++;
+        HighestCombo = Math.Max(HighestCombo, ComboCount);
+        RemainingTime = ComboWindow;
+
+        int awardedPoints = RunnerScore.ActionClearPoints * Multiplier;
+        TotalBonusScore += awardedPoints;
+        return awardedPoints;
+    }
+
+    public void Tick(float deltaTime)
+    {
+        if (ComboCount == 0 || deltaTime <= 0f)
+        {
+            return;
+        }
+
+        RemainingTime = Math.Max(0f, RemainingTime - deltaTime);
+        if (RemainingTime <= 0f)
+        {
+            ComboCount = 0;
+        }
+    }
+
+    public void Reset()
+    {
+        ComboCount = 0;
+        HighestCombo = 0;
+        TotalBonusScore = 0;
+        RemainingTime = 0f;
+    }
 }
 
 public readonly struct RunnerPatternElement
@@ -155,6 +205,8 @@ public static class RunnerPatternCatalog
     public const float MaximumRunnerSpeed = 16.5f;
     public const float MinimumActionTime = 0.9f;
     public const float MinimumRequiredActionSpacing = MaximumRunnerSpeed * MinimumActionTime;
+    public const float MinimumLaneChangeDistance =
+        MaximumRunnerSpeed * RunnerMotor.DefaultLaneWidth / RunnerMotor.LaneMoveSpeed;
 
     private const int LeftLane = 1 << 0;
     private const int CenterLane = 1 << 1;
@@ -241,6 +293,15 @@ public static class RunnerPatternCatalog
 
     public static bool IsPatternValid(RunnerPatternDefinition pattern)
     {
+        IReadOnlyList<int> ignoredPath;
+        return TryFindSurvivalPath(pattern, out ignoredPath);
+    }
+
+    public static bool TryFindSurvivalPath(
+        RunnerPatternDefinition pattern,
+        out IReadOnlyList<int> lanePath)
+    {
+        lanePath = Array.Empty<int>();
         if (pattern == null || string.IsNullOrEmpty(pattern.Id) || pattern.Elements.Count == 0)
         {
             return false;
@@ -250,7 +311,11 @@ public static class RunnerPatternCatalog
         for (int index = 0; index < pattern.Elements.Count; index++)
         {
             RunnerPatternElement element = pattern.Elements[index];
-            if (element.LaneMask <= 0 || (element.LaneMask & ~AllLanes) != 0 || element.ZOffset < 0f)
+            if (element.LaneMask <= 0 ||
+                (element.LaneMask & ~AllLanes) != 0 ||
+                element.ZOffset < 0f ||
+                float.IsNaN(element.ZOffset) ||
+                float.IsInfinity(element.ZOffset))
             {
                 return false;
             }
@@ -262,55 +327,146 @@ public static class RunnerPatternCatalog
         }
 
         offsets.Sort();
-        float previousRequiredActionOffset = float.NegativeInfinity;
+        List<PathCandidate> candidates = new List<PathCandidate>();
+        float previousOffset = offsets[0];
 
         for (int offsetIndex = 0; offsetIndex < offsets.Count; offsetIndex++)
         {
             float offset = offsets[offsetIndex];
-            bool hasSurvivableLane = false;
-            bool hasRequiredAction = false;
+            float availableDistance = offsetIndex == 0
+                ? float.PositiveInfinity
+                : offset - previousOffset;
+            PathCandidate[] bestForLane = new PathCandidate[3];
 
             for (int lane = 0; lane < 3; lane++)
             {
-                RunnerObstacleKind? laneObstacle = null;
-                for (int elementIndex = 0; elementIndex < pattern.Elements.Count; elementIndex++)
-                {
-                    RunnerPatternElement element = pattern.Elements[elementIndex];
-                    if (Math.Abs(element.ZOffset - offset) < 0.001f && (element.LaneMask & (1 << lane)) != 0)
-                    {
-                        laneObstacle = element.Kind;
-                        break;
-                    }
-                }
-
-                if (!laneObstacle.HasValue || laneObstacle.Value != RunnerObstacleKind.Blocker)
-                {
-                    hasSurvivableLane = true;
-                }
-
-                if (laneObstacle.HasValue && RequiredAction(laneObstacle.Value) != RunnerRequiredAction.None)
-                {
-                    hasRequiredAction = true;
-                }
-            }
-
-            if (!hasSurvivableLane)
-            {
-                return false;
-            }
-
-            if (hasRequiredAction)
-            {
-                if (offset - previousRequiredActionOffset < MinimumRequiredActionSpacing)
+                RunnerObstacleKind? laneObstacle;
+                if (!TryGetLaneObstacle(pattern, offset, lane, out laneObstacle))
                 {
                     return false;
                 }
 
-                previousRequiredActionOffset = offset;
+                if (laneObstacle == RunnerObstacleKind.Blocker)
+                {
+                    continue;
+                }
+
+                RunnerRequiredAction requiredAction = laneObstacle.HasValue
+                    ? RequiredAction(laneObstacle.Value)
+                    : RunnerRequiredAction.None;
+
+                if (offsetIndex == 0)
+                {
+                    bestForLane[lane] = PathCandidate.Start(lane, offset, requiredAction);
+                    continue;
+                }
+
+                for (int candidateIndex = 0; candidateIndex < candidates.Count; candidateIndex++)
+                {
+                    PathCandidate candidate = candidates[candidateIndex];
+                    float laneChangeDistance = Math.Abs(lane - candidate.Lane) * MinimumLaneChangeDistance;
+                    if (laneChangeDistance > availableDistance + 0.001f)
+                    {
+                        continue;
+                    }
+
+                    if (requiredAction != RunnerRequiredAction.None &&
+                        offset - candidate.LastRequiredActionOffset < MinimumRequiredActionSpacing - 0.001f)
+                    {
+                        continue;
+                    }
+
+                    PathCandidate next = candidate.Advance(lane, offset, requiredAction);
+                    if (bestForLane[lane] == null ||
+                        next.LastRequiredActionOffset < bestForLane[lane].LastRequiredActionOffset)
+                    {
+                        bestForLane[lane] = next;
+                    }
+                }
             }
+
+            candidates.Clear();
+            for (int lane = 0; lane < bestForLane.Length; lane++)
+            {
+                if (bestForLane[lane] != null)
+                {
+                    candidates.Add(bestForLane[lane]);
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                return false;
+            }
+
+            previousOffset = offset;
+        }
+
+        lanePath = candidates[0].Lanes;
+        return true;
+    }
+
+    private static bool TryGetLaneObstacle(
+        RunnerPatternDefinition pattern,
+        float offset,
+        int lane,
+        out RunnerObstacleKind? obstacle)
+    {
+        obstacle = null;
+        for (int elementIndex = 0; elementIndex < pattern.Elements.Count; elementIndex++)
+        {
+            RunnerPatternElement element = pattern.Elements[elementIndex];
+            if (Math.Abs(element.ZOffset - offset) >= 0.001f || (element.LaneMask & (1 << lane)) == 0)
+            {
+                continue;
+            }
+
+            if (obstacle.HasValue)
+            {
+                return false;
+            }
+
+            obstacle = element.Kind;
         }
 
         return true;
+    }
+
+    private sealed class PathCandidate
+    {
+        private PathCandidate(int lane, float lastRequiredActionOffset, List<int> lanes)
+        {
+            Lane = lane;
+            LastRequiredActionOffset = lastRequiredActionOffset;
+            Lanes = lanes;
+        }
+
+        public int Lane { get; }
+        public float LastRequiredActionOffset { get; }
+        public IReadOnlyList<int> Lanes { get; }
+
+        public static PathCandidate Start(int lane, float offset, RunnerRequiredAction requiredAction)
+        {
+            return new PathCandidate(
+                lane,
+                requiredAction == RunnerRequiredAction.None ? float.NegativeInfinity : offset,
+                new List<int> { lane });
+        }
+
+        public PathCandidate Advance(int lane, float offset, RunnerRequiredAction requiredAction)
+        {
+            List<int> lanes = new List<int>(Lanes.Count + 1);
+            for (int index = 0; index < Lanes.Count; index++)
+            {
+                lanes.Add(Lanes[index]);
+            }
+
+            lanes.Add(lane);
+            return new PathCandidate(
+                lane,
+                requiredAction == RunnerRequiredAction.None ? LastRequiredActionOffset : offset,
+                lanes);
+        }
     }
 
     private static RunnerPatternElement Element(RunnerObstacleKind kind, int laneMask, float zOffset)

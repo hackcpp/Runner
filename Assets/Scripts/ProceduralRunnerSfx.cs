@@ -32,21 +32,25 @@ public sealed class ProceduralRunnerSfx
 
     public void PlayJump()
     {
+        source.pitch = 1f;
         source.PlayOneShot(jumpClip);
     }
 
     public void PlaySlide()
     {
+        source.pitch = 1f;
         source.PlayOneShot(slideClip);
     }
 
-    public void PlayClear()
+    public void PlayClear(int multiplier)
     {
+        source.pitch = Mathf.Lerp(1f, 1.18f, Mathf.InverseLerp(1f, RunnerComboTracker.MaximumMultiplier, multiplier));
         source.PlayOneShot(clearClip);
     }
 
     public void PlayCrash()
     {
+        source.pitch = 1f;
         source.PlayOneShot(crashClip);
     }
 

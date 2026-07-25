@@ -80,22 +80,23 @@ Runner/
 - 游戏状态：开始、游戏中、失败
 - 运行时创建角色、道路、城市背景和障碍
 - 三车道输入、跳跃、滑铲和插值移动
-- 自动前进、距离计分和动作奖励
+- 自动前进、距离计分、动作奖励和限时连击倍率
 - 教学障碍、分级障碍模式和固定种子生成
-- 前方世界生成和身后对象清理
+- 完整生存路径验证和强制动作间距校验
+- 前方世界生成、身后对象清理和运行时几何体复用
 - 按障碍类型区分的坐标碰撞判定
 - 固定斜角第三人称相机
 - 速度 FOV、动作提示和得分反馈
 - IMGUI 开始/结算界面
-- 最佳距离和最佳分本地保存
+- 最佳距离、最佳分和最佳连击本地保存
 
 ### `Assets/Scripts/RunnerMotor.cs`
 
-独立的角色运动组件。使用自定义坐标逻辑，不依赖 Rigidbody，负责换道、跳跃、滑铲、姿态动画和逻辑碰撞体高度。
+独立的角色运动组件。使用自定义坐标逻辑，不依赖 Rigidbody，负责换道、跳跃、滑铲、姿态动画和逻辑碰撞体高度。支持落地前跳跃缓冲和单步换道输入队列。
 
 ### `Assets/Scripts/RunnerGameplay.cs`
 
-集中保存 `Blocker`、`Hurdle`、`Overhead` 三类障碍规则，以及 12 个按距离分级的可学习障碍模式。模式使用固定种子时可以复现，便于测试。
+集中保存 `Blocker`、`Hurdle`、`Overhead` 三类障碍规则、连击计分器，以及 12 个按距离分级的可学习障碍模式。模式使用固定种子时可以复现；路径求解器会按最高速度验证换道距离和动作间距。
 
 ### `Assets/Editor/RunnerBuild.cs`
 
@@ -245,9 +246,11 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
   -projectPath /Users/lucas.l/Workspace/code/Runner \
   -runTests \
   -testPlatform PlayMode \
-  -testResults /Users/lucas.l/Workspace/code/Runner/unity-playmode-results.xml \
-  -logFile /Users/lucas.l/Workspace/code/Runner/unity-playmode-test.log
+ -testResults /Users/lucas.l/Workspace/code/Runner/unity-playmode-results.xml \
+ -logFile /Users/lucas.l/Workspace/code/Runner/unity-playmode-test.log
 ```
+
+当前 PlayMode 冒烟套件共 11 项，覆盖角色输入缓冲、完整障碍路径求解、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
 
 如果命令行提示项目已被另一个 Unity 实例打开，需要先关闭 Unity Editor，再重试。
 

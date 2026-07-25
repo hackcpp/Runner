@@ -22,7 +22,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         public bool Passed;
     }
 
-    private const float LaneWidth = 2.2f;
+    private const float LaneWidth = RunnerMotor.DefaultLaneWidth;
     private const float SegmentLength = 14f;
     private const float LookAheadDistance = 90f;
     private const float CleanupDistance = 24f;
@@ -31,6 +31,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private const float ObstacleLaneTolerance = 0.82f;
     private const string BestDistanceKey = "EndlessRunner.HighScore";
     private const string BestScoreKey = "EndlessRunner.BestScore";
+    private const string BestComboKey = "EndlessRunner.BestCombo";
 
     private static readonly Color RunnerColor = new Color(0.05f, 0.72f, 0.8f);
     private static readonly Color CrashColor = new Color(1f, 0.24f, 0.12f);
@@ -38,10 +39,14 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private readonly List<GameObject> roadSegments = new List<GameObject>();
     private readonly List<GameObject> cityBlocks = new List<GameObject>();
     private readonly List<Obstacle> obstacles = new List<Obstacle>();
+    private readonly Stack<GameObject> cubePool = new Stack<GameObject>();
+    private readonly Stack<GameObject> obstacleRootPool = new Stack<GameObject>();
+    private readonly RunnerComboTracker combo = new RunnerComboTracker();
     private readonly Vector3 cameraOffset = new Vector3(0f, 7.2f, -9.5f);
 
     private GameState state;
     private GameObject worldRoot;
+    private GameObject worldPoolRoot;
     private GameObject player;
     private GameObject playerVisualRoot;
     private GameObject playerBody;
@@ -67,12 +72,18 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     private int nextSegmentIndex;
     private int actionClearCount;
+    private int actionFeedbackPoints;
+    private int bestCombo;
     private int bestScore;
+    private int totalCreatedCubeCount;
+    private int totalCreatedObstacleRootCount;
     private int? nextRunSeed;
     private float nextPatternZ;
     private float distance;
     private float highScore;
     private float currentSpeed;
+    private float cameraFovPulse;
+    private float cameraImpactTimer;
     private float laneHintTimer;
     private float actionHintTimer;
     private float actionFeedbackTimer;
@@ -82,8 +93,18 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private bool tutorialGenerated;
 
     public RunnerMotor Motor => runnerMotor;
-    public int CurrentScore => RunnerScore.Calculate(distance, actionClearCount);
+    public int CurrentScore => RunnerScore.CalculateWithBonus(distance, combo.TotalBonusScore);
     public int ActionClearCount => actionClearCount;
+    public int ActionBonusScore => combo.TotalBonusScore;
+    public int CurrentCombo => combo.ComboCount;
+    public int RunBestCombo => combo.HighestCombo;
+    public int BestCombo => bestCombo;
+    public int ActiveObstacleCount => obstacles.Count;
+    public int ActiveWorldCubeCount => CountActiveWorldCubes();
+    public int PooledCubeCount => cubePool.Count;
+    public int PooledObstacleRootCount => obstacleRootPool.Count;
+    public int TotalCreatedCubeCount => totalCreatedCubeCount;
+    public int TotalCreatedObstacleRootCount => totalCreatedObstacleRootCount;
     public float Distance => distance;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -101,6 +122,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         highScore = PlayerPrefs.GetFloat(BestDistanceKey, 0f);
         bestScore = PlayerPrefs.GetInt(BestScoreKey, 0);
+        bestCombo = PlayerPrefs.GetInt(BestComboKey, 0);
         CreateMaterials();
         ConfigureScene();
         ProceduralRunnerMusic.AttachTo(gameObject);
@@ -174,7 +196,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         }
 
         float panelWidth = Mathf.Min(520f, Screen.width - 44f);
-        float panelHeight = state == GameState.StartScreen ? 248f : 272f;
+        float panelHeight = state == GameState.StartScreen ? 248f : 326f;
         Rect panel = new Rect(
             (Screen.width - panelWidth) * 0.5f,
             (Screen.height - panelHeight) * 0.5f,
@@ -211,7 +233,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             GUILayout.Label("Score  " + CurrentScore, title, GUILayout.Height(46f));
             GUILayout.Label("Distance  " + Mathf.FloorToInt(distance) + " m", small, GUILayout.Height(28f));
-            GUILayout.Space(14f);
+            GUILayout.Label("Actions  " + actionClearCount + "    Best combo  x" + combo.HighestCombo, small, GUILayout.Height(28f));
+            GUILayout.Space(12f);
 
             if (GUILayout.Button("Restart", GUILayout.Height(46f)))
             {
@@ -226,6 +249,22 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         nextRunSeed = seed;
         ResetRun(GameState.Playing);
+    }
+
+    public void AdvanceWorldForTests(float meters)
+    {
+        if (state != GameState.Playing || meters <= 0f)
+        {
+            return;
+        }
+
+        Vector3 position = player.transform.position;
+        position.z += meters;
+        player.transform.position = position;
+        distance = Mathf.Max(distance, position.z);
+        currentSpeed = RunnerPatternCatalog.MaximumRunnerSpeed;
+        GenerateWorldAhead();
+        CleanupWorldBehind();
     }
 
     private void DrawGameplayFeedback(GUIStyle label)
@@ -249,7 +288,34 @@ public sealed class EndlessRunnerGame : MonoBehaviour
                 normal = { textColor = new Color(1f, 0.86f, 0.24f, Mathf.Clamp01(actionFeedbackTimer * 2f)) }
             };
 
-            GUI.Label(new Rect(Screen.width * 0.5f - 90f, Screen.height * 0.28f, 180f, 46f), "+100", feedback);
+            string comboSuffix = combo.Multiplier > 1 ? "  x" + combo.Multiplier : string.Empty;
+            GUI.Label(
+                new Rect(Screen.width * 0.5f - 110f, Screen.height * 0.28f, 220f, 46f),
+                "+" + actionFeedbackPoints + comboSuffix,
+                feedback);
+        }
+
+        if (combo.ComboCount > 0)
+        {
+            GUIStyle comboStyle = new GUIStyle(label)
+            {
+                fontSize = 20,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = new Color(1f, 0.86f, 0.24f) }
+            };
+
+            float width = 150f;
+            float x = (Screen.width - width) * 0.5f;
+            GUI.Label(new Rect(x, 20f, width, 28f), "COMBO  x" + combo.Multiplier, comboStyle);
+
+            Color previousColor = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.42f);
+            GUI.DrawTexture(new Rect(x, 51f, width, 5f), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 0.82f, 0.18f, 0.92f);
+            float remainingAmount = Mathf.Clamp01(combo.RemainingTime / RunnerComboTracker.ComboWindow);
+            GUI.DrawTexture(new Rect(x, 51f, width * remainingAmount, 5f), Texture2D.whiteTexture);
+            GUI.color = previousColor;
         }
     }
 
@@ -299,6 +365,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private void ConfigureScene()
     {
         worldRoot = new GameObject("Generated Runner World");
+        worldPoolRoot = new GameObject("Runner World Pool");
+        worldPoolRoot.transform.SetParent(worldRoot.transform);
 
         gameCamera = Camera.main;
         if (gameCamera == null)
@@ -371,6 +439,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         GameObject particleObject = new GameObject("Action Clear Particles");
         actionParticles = particleObject.AddComponent<ParticleSystem>();
+        actionParticles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
 
         ParticleSystem.MainModule main = actionParticles.main;
         main.duration = 0.45f;
@@ -402,9 +471,12 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         nextSegmentIndex = -1;
         nextPatternZ = 96f;
         actionClearCount = 0;
+        actionFeedbackPoints = RunnerScore.ActionClearPoints;
         laneHintTimer = nextState == GameState.Playing ? 2.4f : 0f;
         actionHintTimer = 0f;
         actionFeedbackTimer = 0f;
+        cameraFovPulse = 0f;
+        cameraImpactTimer = 0f;
         actionHintSymbol = null;
         jumpHintShown = false;
         slideHintShown = false;
@@ -413,6 +485,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         int seed = nextRunSeed ?? unchecked(Environment.TickCount ^ DateTime.UtcNow.Millisecond * 397);
         nextRunSeed = null;
         patternSequence = new RunnerPatternSequence(seed);
+        combo.Reset();
 
         runnerMotor.ResetForRun();
         playerMaterial.color = RunnerColor;
@@ -434,6 +507,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         if (runnerMotor.JumpStartedThisFrame)
         {
             soundEffects.PlayJump();
+            cameraFovPulse = Mathf.Max(cameraFovPulse, 1.1f);
             if (actionHintSymbol == "\u2191")
             {
                 actionHintTimer = 0f;
@@ -443,10 +517,16 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         if (runnerMotor.SlideStartedThisFrame)
         {
             soundEffects.PlaySlide();
+            cameraFovPulse = Mathf.Max(cameraFovPulse, 0.75f);
             if (actionHintSymbol == "\u2193")
             {
                 actionHintTimer = 0f;
             }
+        }
+
+        if (runnerMotor.LandedThisFrame)
+        {
+            cameraFovPulse = Mathf.Max(cameraFovPulse, 0.45f);
         }
 
         distance = Mathf.Max(distance, player.transform.position.z);
@@ -597,9 +677,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private void CreateObstacle(RunnerObstacleKind kind, int lane, float z)
     {
         float x = LaneX(lane);
-        GameObject root = new GameObject(kind + " Obstacle");
-        root.transform.position = new Vector3(x, 0f, z);
-        root.transform.SetParent(worldRoot.transform);
+        GameObject root = AcquireObstacleRoot(kind + " Obstacle", new Vector3(x, 0f, z));
 
         if (kind == RunnerObstacleKind.Blocker)
         {
@@ -728,10 +806,12 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private void RegisterActionClear()
     {
         actionClearCount++;
+        actionFeedbackPoints = combo.RegisterActionClear();
         actionFeedbackTimer = 0.72f;
+        cameraFovPulse = Mathf.Max(cameraFovPulse, 0.9f + combo.Multiplier * 0.12f);
         actionParticles.transform.position = player.transform.position + new Vector3(0f, 0.9f, 0f);
-        actionParticles.Emit(14);
-        soundEffects.PlayClear();
+        actionParticles.Emit(12 + combo.Multiplier * 3);
+        soundEffects.PlayClear(combo.Multiplier);
     }
 
     private void EndRun()
@@ -739,12 +819,16 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         state = GameState.GameOver;
         highScore = Mathf.Max(highScore, distance);
         bestScore = Mathf.Max(bestScore, CurrentScore);
+        bestCombo = Mathf.Max(bestCombo, combo.HighestCombo);
         PlayerPrefs.SetFloat(BestDistanceKey, highScore);
         PlayerPrefs.SetInt(BestScoreKey, bestScore);
+        PlayerPrefs.SetInt(BestComboKey, bestCombo);
         PlayerPrefs.Save();
 
         playerMaterial.color = CrashColor;
         playerVisualRoot.transform.localRotation = Quaternion.Euler(72f, 0f, 18f);
+        cameraImpactTimer = 0.24f;
+        cameraFovPulse = 2f;
         soundEffects.PlayCrash();
     }
 
@@ -794,6 +878,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         laneHintTimer = Mathf.Max(0f, laneHintTimer - Time.deltaTime);
         actionHintTimer = Mathf.Max(0f, actionHintTimer - Time.deltaTime);
         actionFeedbackTimer = Mathf.Max(0f, actionFeedbackTimer - Time.deltaTime);
+        combo.Tick(Time.deltaTime);
     }
 
     private void CleanupWorldBehind()
@@ -806,7 +891,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             if (obstacles[index].Z < cutoff)
             {
-                Destroy(obstacles[index].Body);
+                ReleaseObstacleRoot(obstacles[index].Body);
                 obstacles.RemoveAt(index);
             }
         }
@@ -818,7 +903,11 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             if (objects[index] == null || objects[index].transform.position.z < cutoff)
             {
-                Destroy(objects[index]);
+                if (objects[index] != null)
+                {
+                    ReleaseCube(objects[index]);
+                }
+
                 objects.RemoveAt(index);
             }
         }
@@ -826,22 +915,25 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     private void ClearWorld()
     {
-        DestroyObjects(roadSegments);
-        DestroyObjects(cityBlocks);
+        ReleaseObjects(roadSegments);
+        ReleaseObjects(cityBlocks);
 
         for (int index = obstacles.Count - 1; index >= 0; index--)
         {
-            Destroy(obstacles[index].Body);
+            ReleaseObstacleRoot(obstacles[index].Body);
         }
 
         obstacles.Clear();
     }
 
-    private void DestroyObjects(List<GameObject> objects)
+    private void ReleaseObjects(List<GameObject> objects)
     {
         for (int index = objects.Count - 1; index >= 0; index--)
         {
-            Destroy(objects[index]);
+            if (objects[index] != null)
+            {
+                ReleaseCube(objects[index]);
+            }
         }
 
         objects.Clear();
@@ -851,6 +943,15 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         Vector3 playerPosition = player.transform.position;
         Vector3 desiredPosition = playerPosition + cameraOffset;
+        if (cameraImpactTimer > 0f && !snap)
+        {
+            float shake = cameraImpactTimer / 0.24f;
+            desiredPosition += new Vector3(
+                Mathf.Sin(Time.unscaledTime * 82f) * 0.16f * shake,
+                Mathf.Cos(Time.unscaledTime * 67f) * 0.1f * shake,
+                0f);
+        }
+
         float positionBlend = snap ? 1f : 1f - Mathf.Exp(-8f * Time.deltaTime);
         gameCamera.transform.position = Vector3.Lerp(gameCamera.transform.position, desiredPosition, positionBlend);
         gameCamera.transform.LookAt(playerPosition + new Vector3(0f, 1.1f, 8.5f));
@@ -858,19 +959,97 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         float speedAmount = state == GameState.Playing
             ? Mathf.InverseLerp(StartingSpeed, RunnerPatternCatalog.MaximumRunnerSpeed, currentSpeed)
             : 0f;
-        float targetFieldOfView = Mathf.Lerp(58f, 64f, speedAmount);
+        float targetFieldOfView = Mathf.Lerp(58f, 64f, speedAmount) + cameraFovPulse;
         float fieldOfViewBlend = snap ? 1f : 1f - Mathf.Exp(-4f * Time.deltaTime);
         gameCamera.fieldOfView = Mathf.Lerp(gameCamera.fieldOfView, targetFieldOfView, fieldOfViewBlend);
+        cameraFovPulse = Mathf.MoveTowards(cameraFovPulse, 0f, Time.deltaTime * 4.5f);
+        cameraImpactTimer = Mathf.Max(0f, cameraImpactTimer - Time.deltaTime);
     }
 
     private GameObject CreateCube(string objectName, Vector3 position, Vector3 scale, Material material)
     {
-        GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        GameObject cube;
+        if (cubePool.Count > 0)
+        {
+            cube = cubePool.Pop();
+        }
+        else
+        {
+            cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            totalCreatedCubeCount++;
+        }
+
         cube.name = objectName;
+        cube.transform.SetParent(worldRoot.transform);
         cube.transform.position = position;
+        cube.transform.rotation = Quaternion.identity;
         cube.transform.localScale = scale;
         SetMaterial(cube, material);
+        cube.SetActive(true);
         return cube;
+    }
+
+    private GameObject AcquireObstacleRoot(string objectName, Vector3 position)
+    {
+        GameObject root;
+        if (obstacleRootPool.Count > 0)
+        {
+            root = obstacleRootPool.Pop();
+        }
+        else
+        {
+            root = new GameObject();
+            totalCreatedObstacleRootCount++;
+        }
+
+        root.name = objectName;
+        root.transform.SetParent(worldRoot.transform);
+        root.transform.position = position;
+        root.transform.rotation = Quaternion.identity;
+        root.transform.localScale = Vector3.one;
+        root.SetActive(true);
+        return root;
+    }
+
+    private void ReleaseObstacleRoot(GameObject root)
+    {
+        if (root == null)
+        {
+            return;
+        }
+
+        while (root.transform.childCount > 0)
+        {
+            ReleaseCube(root.transform.GetChild(root.transform.childCount - 1).gameObject);
+        }
+
+        root.SetActive(false);
+        root.transform.SetParent(worldPoolRoot.transform);
+        obstacleRootPool.Push(root);
+    }
+
+    private void ReleaseCube(GameObject cube)
+    {
+        cube.SetActive(false);
+        cube.transform.SetParent(worldPoolRoot.transform);
+        cube.transform.localPosition = Vector3.zero;
+        cube.transform.localRotation = Quaternion.identity;
+        cube.transform.localScale = Vector3.one;
+        cubePool.Push(cube);
+    }
+
+    private int CountActiveWorldCubes()
+    {
+        int count = roadSegments.Count + cityBlocks.Count;
+        for (int index = 0; index < obstacles.Count; index++)
+        {
+            if (obstacles[index].Body != null)
+            {
+                count += obstacles[index].Body.transform.childCount;
+            }
+        }
+
+        return count;
     }
 
     private void SetMaterial(GameObject target, Material material)

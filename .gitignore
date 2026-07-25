@@ -106,4 +106,9 @@ InitTestScene*.unity*
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
 
+# Local Unity test and editor-generated output
+/*-results.xml
+/ProjectSettings/SceneTemplateSettings.json
+
 docs/
+.DS_Store
