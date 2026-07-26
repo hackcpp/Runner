@@ -48,23 +48,118 @@ public sealed class EndlessRunnerSmokeTests
         Assert.NotNull(GameObject.Find("Runner Visor"), "The runner should expose a clear forward-facing accent.");
         Assert.NotNull(GameObject.Find("Runner Back Pack"), "The runner should expose a distinct rear silhouette.");
 
+        Assert.NotNull(game.Music, "The game should retain its music controller.");
         AudioSource[] audioSources = game.GetComponents<AudioSource>();
-        Assert.GreaterOrEqual(audioSources.Length, 2, "Music and one-shot sound effects should use separate sources.");
+        Assert.AreEqual(4, audioSources.Length, "Three music layers and one-shot sound effects should use fixed sources.");
 
-        AudioSource music = null;
+        int loopingSourceCount = 0;
+        int oneShotSourceCount = 0;
         for (int index = 0; index < audioSources.Length; index++)
         {
             if (audioSources[index].loop)
             {
-                music = audioSources[index];
-                break;
+                loopingSourceCount++;
+            }
+            else
+            {
+                oneShotSourceCount++;
             }
         }
 
-        Assert.NotNull(music, "Background music source should exist.");
-        Assert.NotNull(music.clip, "Background music clip should exist.");
-        Assert.IsTrue(music.loop, "Background music should loop.");
-        Assert.Greater(music.clip.length, 10f, "Background music loop should contain a complete musical phrase.");
+        Assert.AreEqual(ProceduralRunnerMusic.LayerCount, loopingSourceCount);
+        Assert.AreEqual(1, oneShotSourceCount, "Action sounds should retain an independent one-shot source.");
+        for (int layerIndex = 0; layerIndex < ProceduralRunnerMusic.LayerCount; layerIndex++)
+        {
+            Assert.NotNull(game.Music.GetClip(layerIndex));
+            Assert.IsTrue(game.Music.GetSource(layerIndex).loop);
+            Assert.Greater(game.Music.GetClip(layerIndex).length, 30f);
+        }
+    }
+
+    [UnityTest]
+    public IEnumerator LayeredMusicMeetsQualityAndReuseTargets()
+    {
+        yield return null;
+        yield return null;
+
+        EndlessRunnerGame game = Object.FindObjectOfType<EndlessRunnerGame>();
+        ProceduralRunnerMusic music = game.Music;
+        Assert.NotNull(music);
+        Assert.AreEqual(ProceduralRunnerMusic.LayerCount, music.SourceCount);
+        Assert.AreEqual(ProceduralRunnerMusic.LayerCount, music.ClipCount);
+
+        AudioSource[] originalSources = new AudioSource[ProceduralRunnerMusic.LayerCount];
+        AudioClip[] originalClips = new AudioClip[ProceduralRunnerMusic.LayerCount];
+        int expectedSampleCount = music.GetMetrics(0).SampleCount;
+        float expectedDuration = music.GetMetrics(0).Duration;
+
+        for (int layerIndex = 0; layerIndex < ProceduralRunnerMusic.LayerCount; layerIndex++)
+        {
+            originalSources[layerIndex] = music.GetSource(layerIndex);
+            originalClips[layerIndex] = music.GetClip(layerIndex);
+            RunnerMusicClipMetrics layerMetrics = music.GetMetrics(layerIndex);
+
+            Assert.NotNull(originalSources[layerIndex]);
+            Assert.NotNull(originalClips[layerIndex]);
+            Assert.AreEqual(expectedSampleCount, layerMetrics.SampleCount);
+            Assert.AreEqual(expectedDuration, layerMetrics.Duration, 0.001f);
+            Assert.AreEqual(ProceduralRunnerMusic.TotalBeats, 64);
+            Assert.GreaterOrEqual(layerMetrics.Duration, 30f);
+            Assert.LessOrEqual(layerMetrics.Peak, 0.92f);
+            Assert.LessOrEqual(Mathf.Abs(layerMetrics.DcOffset), 0.001f);
+            Assert.LessOrEqual(layerMetrics.LoopSeamDelta, 0.02f);
+            Assert.IsTrue(layerMetrics.AllSamplesFinite);
+        }
+
+        music.SetState(RunnerMusicState.Menu);
+        music.Tick(ProceduralRunnerMusic.CrossfadeDuration);
+        Assert.AreEqual(RunnerMusicState.Menu, music.State);
+        Assert.AreEqual(1f, music.GetCurrentWeight(0), 0.001f);
+        Assert.AreEqual(0f, music.GetCurrentWeight(1), 0.001f);
+        Assert.AreEqual(0f, music.GetCurrentWeight(2), 0.001f);
+
+        music.SetState(RunnerMusicState.RunningLow);
+        music.Tick(ProceduralRunnerMusic.CrossfadeDuration);
+        Assert.AreEqual(RunnerMusicState.RunningLow, music.State);
+        Assert.AreEqual(0.72f, music.GetCurrentWeight(1), 0.001f);
+        Assert.AreEqual(0.18f, music.GetCurrentWeight(2), 0.001f);
+
+        music.SetState(RunnerMusicState.RunningHigh);
+        music.Tick(ProceduralRunnerMusic.CrossfadeDuration);
+        Assert.AreEqual(RunnerMusicState.RunningHigh, music.State);
+        Assert.AreEqual(1f, music.GetCurrentWeight(1), 0.001f);
+        Assert.AreEqual(0.9f, music.GetCurrentWeight(2), 0.001f);
+
+        music.TriggerDuck();
+        music.Tick(ProceduralRunnerMusic.DuckAttackDuration);
+        Assert.AreEqual(ProceduralRunnerMusic.DuckGain, music.CurrentDuckGain, 0.001f);
+        music.Tick(0.06f);
+        music.Tick(ProceduralRunnerMusic.DuckReleaseDuration);
+        Assert.AreEqual(1f, music.CurrentDuckGain, 0.001f);
+
+        for (int runIndex = 0; runIndex < 3; runIndex++)
+        {
+            game.StartRunForTests(9000 + runIndex);
+        }
+
+        float remainingDistance = RunnerRunTuning.AdvancedTierDistance + 1f;
+        while (remainingDistance > 0f)
+        {
+            float stepDistance = Mathf.Min(14f, remainingDistance);
+            game.AdvanceWorldForTests(stepDistance);
+            remainingDistance -= stepDistance;
+        }
+
+        Assert.AreEqual(RunnerMusicState.RunningHigh, music.State);
+        game.PauseForTests();
+        game.ResumeForTests();
+
+        Assert.AreEqual(4, game.GetComponents<AudioSource>().Length);
+        for (int layerIndex = 0; layerIndex < ProceduralRunnerMusic.LayerCount; layerIndex++)
+        {
+            Assert.AreSame(originalSources[layerIndex], music.GetSource(layerIndex));
+            Assert.AreSame(originalClips[layerIndex], music.GetClip(layerIndex));
+        }
     }
 
     [UnityTest]
@@ -571,6 +666,13 @@ public sealed class EndlessRunnerSmokeTests
         game.StartRunForTests(20260725);
         yield return null;
 
+        AudioSource[] initialAudioSources = game.GetComponents<AudioSource>();
+        AudioClip[] initialMusicClips = new AudioClip[ProceduralRunnerMusic.LayerCount];
+        for (int layerIndex = 0; layerIndex < initialMusicClips.Length; layerIndex++)
+        {
+            initialMusicClips[layerIndex] = game.Music.GetClip(layerIndex);
+        }
+
         int simulationSteps = Mathf.CeilToInt(
             RunnerPatternCatalog.MaximumRunnerSpeed * 600f / 14f);
         int warmCreatedCubeCount = 0;
@@ -594,5 +696,11 @@ public sealed class EndlessRunnerSmokeTests
             game.TotalCreatedCubeCount - warmCreatedCubeCount,
             50,
             "The pool should reach a stable capacity early in a long run.");
+        Assert.AreEqual(initialAudioSources.Length, game.GetComponents<AudioSource>().Length);
+        Assert.AreEqual(4, initialAudioSources.Length);
+        for (int layerIndex = 0; layerIndex < initialMusicClips.Length; layerIndex++)
+        {
+            Assert.AreSame(initialMusicClips[layerIndex], game.Music.GetClip(layerIndex));
+        }
     }
 }

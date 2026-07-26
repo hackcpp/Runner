@@ -59,6 +59,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private Camera gameCamera;
     private Light sun;
     private ParticleSystem actionParticles;
+    private ProceduralRunnerMusic music;
     private ProceduralRunnerSfx soundEffects;
     private RunnerPatternSequence patternSequence;
 
@@ -102,6 +103,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     public RunnerMotor Motor => runnerMotor;
     public RunnerVisualRig VisualRig => runnerVisualRig;
     public RunnerMotionEffects MotionEffects => runnerMotionEffects;
+    public ProceduralRunnerMusic Music => music;
     public int CurrentScore => RunnerScore.CalculateWithBonus(distance, combo.TotalBonusScore);
     public int ActionClearCount => actionClearCount;
     public int ActionBonusScore => combo.TotalBonusScore;
@@ -135,7 +137,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         bestCombo = PlayerPrefs.GetInt(BestComboKey, 0);
         CreateMaterials();
         ConfigureScene();
-        ProceduralRunnerMusic.AttachTo(gameObject);
+        music = ProceduralRunnerMusic.AttachTo(gameObject);
         soundEffects = ProceduralRunnerSfx.AttachTo(gameObject);
         CreatePlayer();
         CreateActionParticles();
@@ -149,6 +151,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     private void Update()
     {
+        music.Tick(Time.unscaledDeltaTime);
+
         if (state == GameState.StartScreen)
         {
             if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return))
@@ -235,6 +239,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         player.transform.position = position;
         distance = Mathf.Max(distance, position.z);
         currentSpeed = RunnerPatternCatalog.MaximumRunnerSpeed;
+        UpdateMusicIntensity();
         GenerateWorldAhead();
         CleanupWorldBehind();
     }
@@ -514,6 +519,9 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
         ClearWorld();
         GenerateWorldAhead();
+        music.SetState(nextState == GameState.Playing
+            ? RunnerMusicState.RunningLow
+            : RunnerMusicState.Menu);
         UpdateCamera(true);
     }
 
@@ -537,6 +545,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         if (runnerMotor.JumpStartedThisFrame)
         {
             soundEffects.PlayJump();
+            music.TriggerDuck();
             cameraRig.PulseFieldOfView(1.1f);
             if (actionHintSymbol == "\u2191")
             {
@@ -547,6 +556,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         if (runnerMotor.SlideStartedThisFrame)
         {
             soundEffects.PlaySlide();
+            music.TriggerDuck();
             cameraRig.PulseFieldOfView(0.75f);
             if (actionHintSymbol == "\u2193")
             {
@@ -558,9 +568,18 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             cameraRig.TriggerImpact(0.08f, 0.45f);
             soundEffects.PlayLanding();
+            music.TriggerDuck();
         }
 
         distance = Mathf.Max(distance, player.transform.position.z);
+        UpdateMusicIntensity();
+    }
+
+    private void UpdateMusicIntensity()
+    {
+        music.SetState(distance >= RunnerRunTuning.AdvancedTierDistance
+            ? RunnerMusicState.RunningHigh
+            : RunnerMusicState.RunningLow);
     }
 
     private void AnimateIdlePlayer()
@@ -1056,6 +1075,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         actionParticles.transform.position = player.transform.position + new Vector3(0f, 0.9f, 0f);
         actionParticles.Emit(12 + combo.Multiplier * 3);
         soundEffects.PlayClear(combo.Multiplier);
+        music.TriggerDuck();
     }
 
     private void EndRun()
@@ -1073,6 +1093,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         playerVisualRoot.transform.localRotation = Quaternion.Euler(72f, 0f, 18f);
         cameraRig.TriggerImpact(0.24f, 2f);
         soundEffects.PlayCrash();
+        music.SetState(RunnerMusicState.GameOver);
+        music.TriggerDuck();
     }
 
     private void PauseRun()

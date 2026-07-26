@@ -69,7 +69,7 @@ Runner/
 │   │   ├── RunnerHud.cs                   # 响应式 Canvas HUD 和状态面板
 │   │   ├── RunnerCameraRig.cs             # 相机跟随、倾斜、FOV 和震动
 │   │   ├── RunnerWorldPool.cs             # 世界几何体和障碍根节点复用
-│   │   ├── ProceduralRunnerMusic.cs       # 程序化背景音乐
+│   │   ├── ProceduralRunnerMusic.cs       # 分层程序化背景音乐与动态混音
 │   │   ├── ProceduralRunnerSfx.cs         # 程序化动作和碰撞音效
 │   │   └── Runner.Runtime.asmdef          # 运行时程序集定义
 │   ├── Brand/
@@ -143,6 +143,10 @@ Runner/
 ### `Assets/Scripts/RunnerWorldPool.cs`
 
 集中管理道路、城市和障碍视觉对象的创建与回收，同时保证程序化视觉几何体不携带启用的物理碰撞体。
+
+### `Assets/Scripts/ProceduralRunnerMusic.cs`
+
+运行时一次性生成三条同步的 `126 BPM`、64 拍程序化音乐层：氛围、节奏和高强度驱动。菜单、低强度跑动、`400m+` 高强度跑动与结算状态通过 `0.72s` 交叉淡化切换；跳跃、滑铲、落地、得分和碰撞会触发约 `-3dB` 的短音乐闪避。重开、暂停和恢复只改变混音状态，不重新创建 `AudioSource` 或 `AudioClip`。
 
 ### `Assets/Editor/RunnerBuild.cs`
 
@@ -296,16 +300,20 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
  -logFile /Users/lucas.l/Workspace/code/Runner/unity-playmode-test.log
 ```
 
-当前 PlayMode 冒烟套件共 18 项，覆盖角色输入缓冲、程序化人物姿态与动作粒子、暂停恢复、完整障碍路径求解、5000 个种子的跨模式跑局模拟、无物理碰撞体约束、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
+当前 PlayMode 冒烟套件共 19 项，覆盖角色输入缓冲、程序化人物姿态与动作粒子、分层音乐结构与样本质量、动态混音和音频对象复用、暂停恢复、完整障碍路径求解、5000 个种子的跨模式跑局模拟、无物理碰撞体约束、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
 
 ### 当前验证基线
 
-- PlayMode：`18/18` 通过
+- PlayMode：`19/19` 通过
+- 程序化音乐：三层同步循环约 `30.48s`，峰值、直流偏移、循环接缝和有限样本全部通过自动化阈值
+- 音频稳定性：重开、暂停、恢复及 10 分钟等效运行后仍保持 4 个音源和 3 个音乐片段，不重复创建
 - 跑局公平性：连续验证 `5000` 个固定种子，每局 `1200m`，无无解序列
 - 长跑稳定性：约 `10` 分钟距离模拟后，活动几何体、障碍数量和对象池容量保持有界
 - macOS Release：`x86_64 + arm64` 通用二进制，版本 `0.1.0`
 - 签名：`codesign --verify --deep --strict` 通过
 - 窗口验证：`1280x720` 与 `1440x900` 下完成开始、换道、暂停、恢复和结算烟测
+
+背景音乐与动态编排的代码、自动化、Release 和 Player 烟测已完成；耳机与扬声器各 5 分钟的主观试听仍按[优化台账](OPTIMIZATION_ROADMAP.md)追踪，试听通过后再将 P2 标记为已完成。
 
 如果命令行提示项目已被另一个 Unity 实例打开，需要先关闭 Unity Editor，再重试。
 

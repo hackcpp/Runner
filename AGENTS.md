@@ -15,7 +15,7 @@ Rooftop Runner 是一个用于作品集展示的 Unity 3D 三车道无尽跑酷�
 - 产品版本：`0.1.0`
 - Bundle Identifier：`com.hackcpp.rooftoprunner`
 - 许可证：Unity Personal
-- 测试基线：PlayMode `18/18`
+- 测试基线：PlayMode `19/19`
 - Release：`x86_64 + arm64` Universal Binary，ad-hoc 签名
 
 除非用户明确扩大范围，不迁移到 Input System、URP、Rigidbody 控制、正式 UI 框架、移动端或手柄。
