@@ -12,9 +12,9 @@
 ## 当前基线
 
 - 产品版本：`0.1.0`
-- 目标平台：macOS 键盘操作
+- 目标平台：macOS 键盘操作；Android APK 构建验证
 - 游戏形态：三车道无尽跑酷作品集切片
-- 已验证基线：PlayMode `19/19`、macOS Release 通用二进制、`1280x720` 与 `1440x900` 窗口烟测
+- 已验证基线：PlayMode `19/19`、macOS Release 通用二进制、Android IL2CPP ARM64 APK、`1280x720` 与 `1440x900` 窗口烟测
 - GitHub 基线提交：`86c7232` (`Improve runner character motion feedback`)
 
 ## 总体进度
@@ -31,9 +31,60 @@
 | 已完成 | Release 启动体验 | 将 Unity Personal 必需的启动画面改为静态同色版本 | Release、Universal Binary、签名与冷启动检查通过 |
 | 已完成 | 工作区清理 | 清除旧日志、IDE 生成文件、空目录和过期发布 ZIP | 保留当前 Release、源码、缓存和未提交修改 |
 | 已完成 | 角色轮廓与动作表现 | 程序化低多边形人物、状态姿态、脚步、尘雾、火花和速度拖尾 | PlayMode `18/18`；Release、签名与双尺寸烟测通过 |
-| 进行中 | 背景音乐与动态编排 | 64 拍三层程序化音乐、状态交叉淡化、动作音效闪避 | PlayMode `19/19`；Release、签名与 Player 烟测通过，待主观试听 |
+| 已完成 | 背景音乐与动态编排 | 64 拍三层程序化音乐、状态交叉淡化、动作音效闪避 | PlayMode `19/19`；Release、签名、Player 烟测及耳机与扬声器试听通过 |
+| 已完成 | Android 平台构建适配 | Android 构建模块、统一 APK 构建入口、平台配置与文档 | IL2CPP ARM64 APK 构建、清单和签名检查通过 |
+| 待处理 | Android 触摸与真机适配 | 横屏手势、移动端 HUD、安全区域、返回键和真机性能 | 尚未实现，当前 APK 仍依赖键盘输入 |
 
-## 当前迭代：背景音乐与动态编排
+## 最近完成：Android 平台构建适配
+
+目标：在不改变现有玩法规则和 macOS 发布流程的前提下，让项目可重复生成用于真机验证的 Android APK。
+
+### 已实现
+
+- [x] 为 Unity `2022.3.62f1c1` 安装 Android Build Support、SDK/NDK 与 OpenJDK。
+- [x] 在 `RunnerBuild.cs` 增加 Android Development、Android Release 菜单和命令行入口。
+- [x] 固化 Android Bundle Identifier、版本、横屏方向、ARM64 架构和应用图标。
+- [x] 实际生成 `Builds/RooftopRunner-android-0.1.0.apk` 并检查 APK 信息。
+- [x] README 补充 Android 环境、界面构建和命令行构建说明。
+
+### 验收结果
+
+- [x] Unity 识别 Android Build Support、OpenJDK 11、NDK r23b、SDK 33/34/35 和 Build Tools 34。
+- [x] Android Release 使用 IL2CPP 成功构建 `arm64-v8a` APK，文件约 `14 MB`。
+- [x] APK 清单确认为包名 `com.hackcpp.rooftoprunner`、版本 `0.1.0`、最低 API 24、目标 API 35。
+- [x] APK v2 调试签名校验通过；正式发布仍需配置独立 keystore。
+- [x] `git diff --check` 通过，Android 构建日志和 APK 保持为本地生成物。
+
+### 完成标准
+
+- Unity 能识别 Android 模块及随附 JDK、SDK、NDK。
+- 菜单和命令行共用同一套 Android Player Settings 与构建逻辑。
+- Release APK 构建成功，包名为 `com.hackcpp.rooftoprunner`，版本为 `0.1.0`，目标架构包含 ARM64。
+- `git diff --check` 通过，工作区不包含日志、测试结果或 IDE 生成文件。
+- 本轮只验证构建链路；触摸输入、移动端 HUD 和真机性能作为后续独立迭代。
+
+## 后续迭代：Android 触摸与真机适配
+
+状态：`待处理`
+
+当前边界：Android APK 可以构建和启动，但游戏开始、换道、跳跃、滑铲、暂停和重开仍依赖键盘；纯触屏设备无法完成完整游戏流程。
+
+### 计划范围
+
+- 增加横屏触摸输入：点击开始、左右滑动换道、上滑跳跃、下滑滑铲。
+- 为暂停、继续和重开提供可触摸控件，并处理 Android 返回键。
+- 保持旧 Input API 和现有键盘操作兼容，不改变 `RunnerMotor` 的运动与碰撞规则。
+- 适配刘海、挖孔和圆角屏安全区域，检查常见 `16:9`、`19.5:9` 与 `20:9` 横屏比例。
+- 在 Android ARM64 真机验证开始、完整操作、失败、重开、暂停恢复、音频、发热和帧率稳定性。
+
+### 完成标准
+
+- 玩家只使用触屏即可完成开始、换道、跳跃、滑铲、暂停、失败和重开闭环。
+- 四种手势互不误触，动作输入缓冲、换道队列和障碍判定与键盘版本一致。
+- HUD 与触摸控件不遮挡玩家、前方障碍或系统安全区域。
+- 相关 PlayMode 测试、Android Release 构建和至少一台 ARM64 真机烟测通过。
+
+## 最近完成：背景音乐与动态编排
 
 目标：降低短循环重复感，让菜单、常规跑动和高强度跑动具有可辨识的动态层次，同时给动作音效保留清晰空间。
 
@@ -54,7 +105,7 @@
 - [x] macOS Release 构建成功，为 `x86_64 + arm64` Universal Binary，版本保持 `0.1.0`。
 - [x] `codesign --verify --deep --strict` 通过。
 - [x] 独立 Player 的开始、跳跃、滑铲、碰撞、重开、暂停、恢复和退出正常，Player 日志无异常。
-- [ ] 使用耳机与扬声器各连续试听至少 5 分钟，确认动作音效清晰且无明显刺耳、疲劳或循环断层。
+- [x] 2026-07-27 使用耳机与扬声器各连续试听至少 5 分钟，动作音效清晰，无明显刺耳、疲劳或循环断层。
 
 ### 完成标准
 
@@ -208,7 +259,7 @@
 
 ### P2：背景音乐与动态编排
 
-状态：`进行中`
+状态：`已完成`
 
 评估：`难度中`，`改动规模 L`。建议作为下一轮独立实施，继续使用程序化音频，不引入外部曲库或商业素材；音乐音量持久化仍归入后续“设置与可访问性”。
 
@@ -233,7 +284,7 @@
 - [x] 菜单、低强度和高强度状态在规定时间内平滑切换，暂停与恢复不重建音频对象。
 - [x] 动作音效触发轻量音乐闪避，攻击和恢复时序通过自动化验证。
 - [x] 自动化验证峰值、直流偏移、循环接缝、有限样本和音源复用。
-- [ ] 完整 PlayMode、macOS Release 与签名已通过；待耳机和扬声器主观试听确认动作音效辨识度。
+- [x] 完整 PlayMode、macOS Release 与签名通过；2026-07-27 耳机和扬声器主观试听确认状态层次、循环连续性与动作音效辨识度符合预期。
 
 ### P3：风险收益与路线引导
 

@@ -23,8 +23,8 @@
 ## 环境
 
 - Unity: 2022.3.62f1c1
-- 平台: macOS
-- 输入: 键盘
+- 平台: macOS；Android APK 构建验证
+- 输入: macOS 键盘；Android 触摸输入待适配
 
 ## 运行
 
@@ -73,9 +73,9 @@ Runner/
 │   │   ├── ProceduralRunnerSfx.cs         # 程序化动作和碰撞音效
 │   │   └── Runner.Runtime.asmdef          # 运行时程序集定义
 │   ├── Brand/
-│   │   └── AppIcon.png                    # macOS/TapTap 包体图标源图
+│   │   └── AppIcon.png                    # macOS/Android 包体图标源图
 │   ├── Editor/
-│   │   └── RunnerBuild.cs                 # Editor 菜单和命令行构建脚本
+│   │   └── RunnerBuild.cs                 # macOS/Android 菜单和命令行构建脚本
 │   └── Tests/
 │       └── PlayMode/
 │           ├── EndlessRunnerSmokeTests.cs # PlayMode 冒烟测试
@@ -158,6 +158,8 @@ Unity Editor 构建工具脚本。
 Runner -> Build -> Mac Development
 Runner -> Build -> Mac Release
 Runner -> Build -> Mac Release Zip For TapTap
+Runner -> Build -> Android Development APK
+Runner -> Build -> Android Release APK
 ```
 
 也可通过命令行构建：
@@ -182,6 +184,12 @@ TapTap macOS 上传包默认输出：
 
 ```text
 Builds/RooftopRunner-mac-0.1.0.zip
+```
+
+Android Release 默认输出：
+
+```text
+Builds/RooftopRunner-android-0.1.0.apk
 ```
 
 ### `Assets/Tests/PlayMode/EndlessRunnerSmokeTests.cs`
@@ -212,6 +220,13 @@ Runner -> Build -> Mac Release
 
 ```text
 Runner -> Build -> Mac Release Zip For TapTap
+```
+
+Android 真机安装验证用：
+
+```text
+Runner -> Build -> Android Development APK
+Runner -> Build -> Android Release APK
 ```
 
 这些菜单和命令行入口使用同一套构建逻辑。
@@ -268,6 +283,34 @@ Release 构建并生成 TapTap zip 包：
   -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
 ```
 
+Android ARM64 Release APK：
+
+```bash
+/Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
+  -batchmode \
+  -nographics \
+  -quit \
+  -projectPath /Users/lucas.l/Workspace/code/Runner \
+  -executeMethod RunnerBuild.BuildAndroidReleaseForCommandLine \
+  -logFile /Users/lucas.l/Workspace/code/Runner/unity-android-build.log
+```
+
+Android 构建配置：
+
+```text
+Package Name: com.hackcpp.rooftoprunner
+Version Name: 0.1.0
+Version Code: 1
+Minimum API: 24 (Android 7.0)
+Target API: 35 (Android 15)
+Scripting Backend: IL2CPP
+Architecture: ARM64
+Orientation: Landscape
+Output: Builds/RooftopRunner-android-0.1.0.apk
+```
+
+当前 APK 使用默认 Android 调试证书签名，只用于安装和构建链路验证。发布到应用商店前需要配置正式 keystore；项目尚未加入触摸输入，因此手机上能启动，但不能完成依赖键盘的完整操作流程。
+
 运行构建产物：
 
 ```bash
@@ -310,6 +353,7 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
 - 跑局公平性：连续验证 `5000` 个固定种子，每局 `1200m`，无无解序列
 - 长跑稳定性：约 `10` 分钟距离模拟后，活动几何体、障碍数量和对象池容量保持有界
 - macOS Release：`x86_64 + arm64` 通用二进制，版本 `0.1.0`
+- Android Release：IL2CPP ARM64 APK，最低 API 24、目标 API 35，版本 `0.1.0`
 - 签名：`codesign --verify --deep --strict` 通过
 - 窗口验证：`1280x720` 与 `1440x900` 下完成开始、换道、暂停、恢复和结算烟测
 
@@ -319,7 +363,7 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
 
 ## TapTap macOS PC 项目侧适配
 
-当前项目只准备 macOS PC 端包体，不包含 Android/iOS 发布流程，也不包含 TapTap 开发者账号注册和后台提交流程。
+当前 TapTap 打包流程只准备 macOS PC 端包体。Android 已具备本地 APK 构建能力，但不包含 Android 商店签名、触摸操作适配、TapTap SDK、开发者账号注册或后台提交流程；iOS 尚未适配。
 
 ### 1. 生成 Release 上传包
 

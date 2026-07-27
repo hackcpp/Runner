@@ -9,6 +9,8 @@ public static class RunnerBuild
     private const string BundleIdentifier = "com.hackcpp.rooftoprunner";
     private const string Version = "0.1.0";
     private const string AppOutputPath = "Builds/RooftopRunner.app";
+    private const string AndroidDevelopmentOutputPath = "Builds/RooftopRunner-android-development.apk";
+    private const string AndroidReleaseOutputPath = "Builds/RooftopRunner-android-0.1.0.apk";
     private const string TapTapZipPath = "Builds/RooftopRunner-mac-0.1.0.zip";
     private const string IconPath = "Assets/Brand/AppIcon.png";
     private static readonly Color SplashBackgroundColor = new Color(0.055f, 0.07f, 0.11f);
@@ -33,6 +35,18 @@ public static class RunnerBuild
         PackageMacAppForTapTap();
     }
 
+    [MenuItem("Runner/Build/Android Development APK")]
+    public static void BuildAndroidDevelopment()
+    {
+        BuildAndroid(AndroidDevelopmentOutputPath, BuildOptions.Development | BuildOptions.AllowDebugging);
+    }
+
+    [MenuItem("Runner/Build/Android Release APK")]
+    public static void BuildAndroidRelease()
+    {
+        BuildAndroid(AndroidReleaseOutputPath, BuildOptions.None);
+    }
+
     public static void BuildMacReleaseForCommandLine()
     {
         BuildMacRelease();
@@ -43,9 +57,14 @@ public static class RunnerBuild
         BuildMacReleaseZipForTapTap();
     }
 
+    public static void BuildAndroidReleaseForCommandLine()
+    {
+        BuildAndroidRelease();
+    }
+
     private static void BuildMac(string outputPath, BuildOptions buildOptions)
     {
-        ApplyPlayerSettings();
+        ApplyMacPlayerSettings();
 
         BuildReportSummary(BuildPipeline.BuildPlayer(
             Scenes,
@@ -56,12 +75,54 @@ public static class RunnerBuild
         ApplyMacIcon(outputPath);
     }
 
-    private static void ApplyPlayerSettings()
+    private static void BuildAndroid(string outputPath, BuildOptions buildOptions)
+    {
+        if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.Android, BuildTarget.Android))
+        {
+            throw new System.InvalidOperationException("Android Build Support is not installed for this Unity Editor.");
+        }
+
+        ApplyAndroidPlayerSettings();
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(outputPath));
+
+        BuildReportSummary(BuildPipeline.BuildPlayer(
+            Scenes,
+            outputPath,
+            BuildTarget.Android,
+            buildOptions));
+    }
+
+    private static void ApplyMacPlayerSettings()
+    {
+        Texture2D icon = ApplyCommonPlayerSettings();
+        PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Standalone, BundleIdentifier);
+        PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Standalone, new[] { icon });
+    }
+
+    private static void ApplyAndroidPlayerSettings()
+    {
+        Texture2D icon = ApplyCommonPlayerSettings();
+        PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, BundleIdentifier);
+        PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Android, new[] { icon });
+        PlayerSettings.Android.bundleVersionCode = 1;
+        PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
+        PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevel35;
+        PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
+        PlayerSettings.Android.useCustomKeystore = false;
+        PlayerSettings.SetScriptingBackend(BuildTargetGroup.Android, ScriptingImplementation.IL2CPP);
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.AutoRotation;
+        PlayerSettings.allowedAutorotateToPortrait = false;
+        PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+        PlayerSettings.allowedAutorotateToLandscapeLeft = true;
+        PlayerSettings.allowedAutorotateToLandscapeRight = true;
+        EditorUserBuildSettings.buildAppBundle = false;
+    }
+
+    private static Texture2D ApplyCommonPlayerSettings()
     {
         PlayerSettings.companyName = CompanyName;
         PlayerSettings.productName = ProductName;
         PlayerSettings.bundleVersion = Version;
-        PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Standalone, BundleIdentifier);
         ApplySplashScreenSettings();
 
         Texture2D icon = AssetDatabase.LoadAssetAtPath<Texture2D>(IconPath);
@@ -70,7 +131,7 @@ public static class RunnerBuild
             throw new System.IO.FileNotFoundException("Missing app icon asset: " + IconPath);
         }
 
-        PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Standalone, new[] { icon });
+        return icon;
     }
 
     private static void ApplySplashScreenSettings()
