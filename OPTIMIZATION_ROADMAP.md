@@ -15,7 +15,7 @@
 - 目标平台：macOS 键盘操作；Android APK 构建验证
 - 游戏形态：三车道无尽跑酷作品集切片
 - 已验证基线：PlayMode `19/19`、macOS Release 通用二进制、Android IL2CPP ARM64 APK、`1280x720` 与 `1440x900` 窗口烟测
-- GitHub 基线提交：`86c7232` (`Improve runner character motion feedback`)
+- GitHub 基线提交：`d542333` (`Add Android build support`)
 
 ## 总体进度
 
@@ -54,6 +54,7 @@
 - [x] APK 清单确认为包名 `com.hackcpp.rooftoprunner`、版本 `0.1.0`、最低 API 24、目标 API 35。
 - [x] APK v2 调试签名校验通过；正式发布仍需配置独立 keystore。
 - [x] `git diff --check` 通过，Android 构建日志和 APK 保持为本地生成物。
+- [x] 实现提交：`d542333` (`Add Android build support`)。
 
 ### 完成标准
 
