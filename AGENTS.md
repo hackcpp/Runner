@@ -15,10 +15,10 @@ Rooftop Runner 是一个用于作品集展示的 Unity 3D 三车道无尽跑酷�
 - 产品版本：`0.1.0`
 - Bundle Identifier：`com.hackcpp.rooftoprunner`
 - 许可证：Unity Personal
-- 测试基线：PlayMode `19/19`
+- 测试基线：PlayMode `22/22`
 - Release：`x86_64 + arm64` Universal Binary，ad-hoc 签名
 
-除非用户明确扩大范围，不迁移到 Input System、URP、Rigidbody 控制、正式 UI 框架、移动端或手柄。
+除非用户明确扩大范围，不迁移到 Input System、URP、Rigidbody 控制、正式 UI 框架、iOS 或手柄。
 
 ## 开始任务前
 
@@ -50,6 +50,10 @@ Unity 可执行文件：
 
 负责三车道移动、跳跃、滑铲、输入缓冲、动作状态、姿态和逻辑碰撞体。必须保持自定义坐标运动，不引入 Rigidbody 或 CharacterController。
 
+### `Assets/Scripts/RunnerTouchInput.cs`
+
+负责旧 Input API 下的 Android 触摸采样、滑动方向判定、移动中即时触发和 UI 触摸过滤。只向 `RunnerMotor` 提交现有动作请求，不复制运动状态、缓冲或碰撞规则。
+
 ### `Assets/Scripts/RunnerGameplay.cs`
 
 负责障碍规则、不可变模式定义、模式目录、动作奖励、连击和分数公式。运行时和测试应复用同一套规则，不复制常量。
@@ -60,7 +64,7 @@ Unity 可执行文件：
 
 ### `Assets/Scripts/RunnerHud.cs`
 
-负责响应式 Canvas HUD、开始、暂停和结算界面。保持 `1280x720` 与 `1440x900` 下文本不重叠，不重新引入 IMGUI。
+负责响应式 Canvas HUD、开始、暂停和结算界面，以及 `Screen.safeArea` 和触控暂停按钮。保持 `1280x720` 与 `1440x900` 下文本不重叠，不重新引入 IMGUI。
 
 ### `Assets/Scripts/RunnerCameraRig.cs`
 
@@ -137,13 +141,14 @@ Release 构建必须保持：
 /Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
   -batchmode \
   -nographics \
-  -quit \
   -projectPath /Users/lucas.l/Workspace/code/Runner \
   -runTests \
   -testPlatform PlayMode \
   -testResults /Users/lucas.l/Workspace/code/Runner/unity-playmode-results.xml \
   -logFile /Users/lucas.l/Workspace/code/Runner/unity-playmode-test.log
 ```
+
+PlayMode Test Runner 会在完成后自行退出。不要添加 `-quit`；脚本发生重新导入时，该参数可能让 Unity 在测试启动前退出且不生成结果 XML。
 
 注意：同一项目不能同时被两个 Unity 实例打开。如果 Editor 已打开，使用现有 Editor 的 Test Runner，或在确认没有未保存场景后再关闭 Editor 运行命令行测试。
 
@@ -166,6 +171,7 @@ rg 'testcasecount|result="(Passed|Failed)"' unity-playmode-results.xml
 - 5000 个种子、每局 1200 米完整跑局
 - 10 分钟对象池有界性
 - 暂停和恢复
+- 四向触摸手势、触控流程按钮、安全区域和 Android 返回键
 - 屋顶视觉几何体无 PhysX Collider
 
 ## macOS 构建

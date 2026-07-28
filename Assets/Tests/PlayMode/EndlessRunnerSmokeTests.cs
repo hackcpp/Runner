@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.UI;
 
 public sealed class EndlessRunnerSmokeTests
 {
@@ -27,6 +28,11 @@ public sealed class EndlessRunnerSmokeTests
         Assert.NotNull(GameObject.Find("Generated Runner World"), "Generated world root should exist.");
         Assert.NotNull(GameObject.Find("Runner HUD Canvas"), "Responsive Canvas HUD should exist.");
         Assert.NotNull(Object.FindObjectOfType<RunnerHud>(), "HUD should use the dedicated presenter component.");
+        Assert.NotNull(game.TouchInput, "Android gestures should use the dedicated touch input component.");
+        Assert.NotNull(game.Hud.GameplaySafeArea, "Gameplay HUD should respect the display safe area.");
+        Assert.NotNull(game.Hud.OverlaySafeArea, "Overlay content should respect the display safe area.");
+        Assert.NotNull(game.Hud.PauseButton, "Playing HUD should provide a touch pause button.");
+        Assert.NotNull(game.Hud.ExitButton, "Overlay screens should provide an explicit exit button.");
         Assert.NotNull(GameObject.Find("Rooftop Slab 0"), "The playable surface should read as a rooftop slab.");
         Assert.NotNull(GameObject.Find("Left Parapet"), "Rooftops should have visible parapet walls.");
         Assert.NotNull(GameObject.Find("Rooftop HVAC Unit"), "The playable roof should include utility silhouettes.");
@@ -425,6 +431,185 @@ public sealed class EndlessRunnerSmokeTests
 
         Object.Destroy(runner);
         yield return null;
+    }
+
+    [Test]
+    public void TouchGestureClassificationSeparatesDirectionsAndRejectsAmbiguousInput()
+    {
+        Assert.AreEqual(
+            RunnerTouchGesture.SwipeLeft,
+            RunnerTouchInput.ClassifyGesture(new Vector2(-80f, 4f), 0.2f, 200f));
+        Assert.AreEqual(
+            RunnerTouchGesture.SwipeRight,
+            RunnerTouchInput.ClassifyGesture(new Vector2(80f, -4f), 0.2f, 200f));
+        Assert.AreEqual(
+            RunnerTouchGesture.SwipeUp,
+            RunnerTouchInput.ClassifyGesture(new Vector2(4f, 80f), 0.2f, 200f));
+        Assert.AreEqual(
+            RunnerTouchGesture.SwipeDown,
+            RunnerTouchInput.ClassifyGesture(new Vector2(-4f, -80f), 0.2f, 200f));
+        Assert.AreEqual(
+            RunnerTouchGesture.None,
+            RunnerTouchInput.ClassifyGesture(new Vector2(30f, 2f), 0.2f, 200f),
+            "Short touches should not trigger movement.");
+        Assert.AreEqual(
+            RunnerTouchGesture.None,
+            RunnerTouchInput.ClassifyGesture(new Vector2(80f, 75f), 0.2f, 200f),
+            "Diagonal input without a dominant axis should be ignored.");
+        Assert.AreEqual(
+            RunnerTouchGesture.SwipeRight,
+            RunnerTouchInput.ClassifyGesture(new Vector2(100f, 0f), 0.9f, 200f),
+            "A deliberate first-time swipe should not need to be extremely fast.");
+        Assert.AreEqual(
+            RunnerTouchGesture.None,
+            RunnerTouchInput.ClassifyGesture(new Vector2(100f, 0f), 1.2f, 200f),
+            "A held drag should not become a delayed runner action.");
+        Assert.AreEqual(
+            RunnerTouchGesture.None,
+            RunnerTouchInput.ClassifyGesture(new Vector2(60f, 0f), 0.2f, 600f),
+            "High-density displays should use a physical-distance threshold.");
+        Assert.AreEqual(
+            RunnerTouchGesture.SwipeDown,
+            RunnerTouchInput.ClassifyGesture(new Vector2(4f, -40f), 0.25f, 200f),
+            "A short, clear downward swipe should be enough for a first-time player.");
+    }
+
+    [UnityTest]
+    public IEnumerator TouchGesturesUseTheExistingRunnerMotorRules()
+    {
+        GameObject runner = new GameObject("Touch Motor Test Runner");
+        GameObject visual = new GameObject("Visual");
+        visual.transform.SetParent(runner.transform);
+        GameObject body = new GameObject("Body");
+        body.transform.SetParent(visual.transform);
+        GameObject shadow = new GameObject("Shadow");
+        shadow.transform.SetParent(runner.transform);
+
+        RunnerMotor motor = runner.AddComponent<RunnerMotor>();
+        motor.Configure(visual.transform, body.transform, shadow.transform, RunnerMotor.DefaultLaneWidth);
+        RunnerTouchInput touchInput = RunnerTouchInput.AttachTo(runner, motor);
+
+        touchInput.SubmitGesture(RunnerTouchGesture.SwipeLeft);
+        motor.Tick(0f, 0.02f);
+        Assert.AreEqual(0, motor.Lane);
+
+        motor.ResetForRun();
+        touchInput.SubmitGesture(RunnerTouchGesture.SwipeRight);
+        motor.Tick(0f, 0.02f);
+        Assert.AreEqual(2, motor.Lane);
+
+        motor.ResetForRun();
+        touchInput.SubmitGesture(RunnerTouchGesture.SwipeUp);
+        motor.Tick(0f, 0.02f);
+        Assert.AreEqual(RunnerActionState.Airborne, motor.State);
+
+        motor.ResetForRun();
+        Assert.IsTrue(touchInput.TrySubmitGesture(new Vector2(3f, -42f), 0.25f, 200f));
+        motor.Tick(0f, 0.02f);
+        Assert.AreEqual(RunnerActionState.Sliding, motor.State);
+
+        Object.Destroy(runner);
+        yield return null;
+    }
+
+    [UnityTest]
+    public IEnumerator TouchHudRespectsSafeAreasAndCompletesTheRunFlow()
+    {
+        yield return null;
+        yield return null;
+
+        EndlessRunnerGame game = Object.FindObjectOfType<EndlessRunnerGame>();
+        RunnerHud hud = game.Hud;
+        Assert.NotNull(hud);
+
+        Rect testSafeArea = new Rect(90f, 24f, 2220f, 1032f);
+        Vector2 testScreenSize = new Vector2(2400f, 1080f);
+        hud.ApplySafeAreaForTests(testSafeArea, testScreenSize);
+
+        RectTransform gameplaySafeArea = hud.GameplaySafeArea;
+        RectTransform overlaySafeArea = hud.OverlaySafeArea;
+        Vector2 expectedMin = new Vector2(0.0375f, 0.022222f);
+        Vector2 expectedMax = new Vector2(0.9625f, 0.977778f);
+        Assert.AreEqual(expectedMin.x, gameplaySafeArea.anchorMin.x, 0.0001f);
+        Assert.AreEqual(expectedMin.y, gameplaySafeArea.anchorMin.y, 0.0001f);
+        Assert.AreEqual(expectedMax.x, gameplaySafeArea.anchorMax.x, 0.0001f);
+        Assert.AreEqual(expectedMax.y, gameplaySafeArea.anchorMax.y, 0.0001f);
+        Assert.AreEqual(gameplaySafeArea.anchorMin, overlaySafeArea.anchorMin);
+        Assert.AreEqual(gameplaySafeArea.anchorMax, overlaySafeArea.anchorMax);
+
+        Button primaryButton = hud.PrimaryButton;
+        Button pauseButton = hud.PauseButton;
+        Button exitButton = hud.ExitButton;
+        Assert.AreEqual(new Vector2(64f, 64f), pauseButton.GetComponent<RectTransform>().sizeDelta);
+        Assert.AreEqual(new Vector2(300f, 56f), exitButton.GetComponent<RectTransform>().sizeDelta);
+        Assert.AreEqual("EXIT", exitButton.GetComponentInChildren<Text>().text);
+
+        hud.Render(new RunnerHudViewModel(
+            RunnerHudMode.Playing,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0f,
+            0,
+            0f,
+            "\u2193",
+            1f,
+            true));
+        Assert.IsTrue(GameObject.Find("Action Hint").GetComponent<Text>().text.Contains("\u25cf"));
+        Assert.IsFalse(exitButton.gameObject.activeInHierarchy, "Exit should not be exposed during active play.");
+        hud.Render(new RunnerHudViewModel(
+            RunnerHudMode.Start,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0f,
+            0,
+            0f,
+            null,
+            0f,
+            true));
+        Assert.IsTrue(GameObject.Find("Panel Details").GetComponent<Text>().text.Contains("\u2193"));
+        Assert.IsTrue(exitButton.gameObject.activeInHierarchy, "The start overlay should expose exit.");
+
+        primaryButton.onClick.Invoke();
+        yield return null;
+        Assert.IsTrue(game.IsPlaying, "The start button should begin a run without keyboard input.");
+        Assert.IsTrue(pauseButton.gameObject.activeSelf);
+
+        pauseButton.onClick.Invoke();
+        yield return null;
+        Assert.IsTrue(game.IsPaused, "The touch pause button should freeze the run.");
+        Assert.IsTrue(exitButton.gameObject.activeInHierarchy, "The pause overlay should expose exit.");
+
+        primaryButton.onClick.Invoke();
+        yield return null;
+        Assert.IsTrue(game.IsPlaying, "The overlay button should resume a paused run.");
+
+        game.BackForTests();
+        Assert.IsTrue(game.IsPaused, "Android Back should open pause during a run.");
+        game.BackForTests();
+        Assert.IsTrue(game.IsPlaying, "Android Back should resume from the pause overlay.");
+
+        game.EndRunForTests();
+        yield return null;
+        Assert.IsFalse(game.IsPlaying);
+        primaryButton.onClick.Invoke();
+        yield return null;
+        Assert.IsTrue(game.IsPlaying, "The restart button should start a fresh run without keyboard input.");
+
+        game.EndRunForTests();
+        yield return null;
+        Assert.IsTrue(exitButton.gameObject.activeInHierarchy, "The results overlay should expose exit.");
+        exitButton.onClick.Invoke();
+        Assert.IsTrue(game.ExitRequested, "Exit should request Player shutdown without closing the Editor test run.");
+        Assert.AreEqual(1f, Time.timeScale, 0.001f);
+        Assert.IsFalse(AudioListener.pause);
     }
 
     [UnityTest]

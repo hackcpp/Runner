@@ -24,7 +24,7 @@
 
 - Unity: 2022.3.62f1c1
 - 平台: macOS；Android APK 构建验证
-- 输入: macOS 键盘；Android 触摸输入待适配
+- 输入: macOS 键盘；Android 横屏触摸手势
 
 ## 运行
 
@@ -51,6 +51,15 @@
 - `S` / `Down Arrow`: 滑铲
 - `Esc` / `P`: 暂停或继续
 - `R` / `Space`: 失败后重开
+- 开始、暂停或结算界面的 `EXIT`: 退出游戏
+
+Android 触屏：
+
+- 点击界面按钮开始、继续、重开或退出
+- 开始页会显示触点与四向手势符号；教学障碍前显示当前需要的滑动方向
+- 左右滑动切换车道，上滑跳跃，下滑滑铲；越过识别距离后立即响应，无需等待松手
+- 点击右上角暂停按钮暂停；开始、暂停和结算界面提供 `EXIT`
+- Android 返回键在跑动中暂停、在暂停界面继续、在开始或结算界面退出
 
 ## 目录结构
 
@@ -62,6 +71,7 @@ Runner/
 │   ├── Scripts/
 │   │   ├── EndlessRunnerGame.cs           # 游戏流程、生成、计分和 UI
 │   │   ├── RunnerMotor.cs                 # 三车道、跳跃和滑铲运动
+│   │   ├── RunnerTouchInput.cs            # Android 手势识别与动作分发
 │   │   ├── RunnerVisualRig.cs             # 程序化人物骨架和状态姿态
 │   │   ├── RunnerMotionEffects.cs         # 脚步、尘雾、火花和速度拖尾
 │   │   ├── RunnerGameplay.cs              # 障碍规则、模式目录、奖励和分数
@@ -116,6 +126,10 @@ Runner/
 
 独立的角色运动组件。使用自定义坐标逻辑，不依赖 Rigidbody，负责换道、跳跃、滑铲、姿态动画和逻辑碰撞体高度。支持落地前跳跃/滑铲缓冲和单步换道输入队列。
 
+### `Assets/Scripts/RunnerTouchInput.cs`
+
+Android 触摸输入组件。按屏幕 DPI 计算最小滑动距离，通过主轴比例区分左右与上下手势，在移动中越过阈值时立即响应，忽略从 UI 控件开始的触摸，并将动作提交到 `RunnerMotor` 现有请求接口。键盘与触摸因此共用输入缓冲、换道队列和动作限制。
+
 ### `Assets/Scripts/RunnerVisualRig.cs`
 
 程序化低多边形人物组件。运行时创建头、躯干、髋部和四肢，通过面罩与背部装饰明确朝向，并根据 `RunnerMotor` 状态表现跑步摆臂、换道侧倾、腾空、落地回弹和滑铲姿态。视觉部件不参与 PhysX，也不修改逻辑碰撞高度。
@@ -134,7 +148,7 @@ Runner/
 
 ### `Assets/Scripts/RunnerHud.cs`
 
-运行时创建的响应式 Canvas HUD，负责分数、距离、最佳分、连击进度、动作提示，以及开始、暂停和结算状态面板。
+运行时创建的响应式 Canvas HUD，负责分数、距离、最佳分、连击进度、动作提示，以及开始、暂停和结算状态面板。游戏信息、暂停按钮和面板内容会跟随 `Screen.safeArea`，避免侵入刘海、挖孔或圆角区域。
 
 ### `Assets/Scripts/RunnerCameraRig.cs`
 
@@ -309,7 +323,7 @@ Orientation: Landscape
 Output: Builds/RooftopRunner-android-0.1.0.apk
 ```
 
-当前 APK 使用默认 Android 调试证书签名，只用于安装和构建链路验证。发布到应用商店前需要配置正式 keystore；项目尚未加入触摸输入，因此手机上能启动，但不能完成依赖键盘的完整操作流程。
+当前 APK 使用默认 Android 调试证书签名，只用于安装和真机验证。横屏触摸闭环已在 Android ARM64 真机通过操作、安全区域、音频、发热和帧率烟测；发布到应用商店前还需要配置正式 keystore。
 
 运行构建产物：
 
@@ -335,7 +349,6 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
 /Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
   -batchmode \
   -nographics \
-  -quit \
   -projectPath /Users/lucas.l/Workspace/code/Runner \
   -runTests \
   -testPlatform PlayMode \
@@ -343,27 +356,30 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
  -logFile /Users/lucas.l/Workspace/code/Runner/unity-playmode-test.log
 ```
 
-当前 PlayMode 冒烟套件共 19 项，覆盖角色输入缓冲、程序化人物姿态与动作粒子、分层音乐结构与样本质量、动态混音和音频对象复用、暂停恢复、完整障碍路径求解、5000 个种子的跨模式跑局模拟、无物理碰撞体约束、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
+PlayMode Test Runner 会在测试结束后自行退出；不要为该命令添加 `-quit`，否则脚本重新导入时可能在测试启动前提前退出。
+
+当前 PlayMode 冒烟套件共 22 项，覆盖角色输入缓冲、触摸手势分类与动作分发、安全区域、明确退出入口和纯触控流程、程序化人物姿态与动作粒子、分层音乐结构与样本质量、动态混音和音频对象复用、暂停恢复、完整障碍路径求解、5000 个种子的跨模式跑局模拟、无物理碰撞体约束、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
 
 ### 当前验证基线
 
-- PlayMode：`19/19` 通过
+- PlayMode：`22/22` 通过
 - 程序化音乐：三层同步循环约 `30.48s`，峰值、直流偏移、循环接缝和有限样本全部通过自动化阈值
 - 音频稳定性：重开、暂停、恢复及 10 分钟等效运行后仍保持 4 个音源和 3 个音乐片段，不重复创建
 - 跑局公平性：连续验证 `5000` 个固定种子，每局 `1200m`，无无解序列
 - 长跑稳定性：约 `10` 分钟距离模拟后，活动几何体、障碍数量和对象池容量保持有界
 - macOS Release：`x86_64 + arm64` 通用二进制，版本 `0.1.0`
 - Android Release：IL2CPP ARM64 APK，最低 API 24、目标 API 35，版本 `0.1.0`
+- Android 触摸：四向滑动、触控流程按钮、安全区域、返回键和明确退出入口通过自动化及 ARM64 真机烟测
 - 签名：`codesign --verify --deep --strict` 通过
-- 窗口验证：`1280x720` 与 `1440x900` 下完成开始、换道、暂停、恢复和结算烟测
+- 窗口验证：`1280x720` 与 `1440x900` 下完成开始、换道、暂停、恢复、结算和退出烟测
 
-背景音乐与动态编排的代码、自动化、Release 和 Player 烟测已完成；耳机与扬声器各 5 分钟的主观试听仍按[优化台账](OPTIMIZATION_ROADMAP.md)追踪，试听通过后再将 P2 标记为已完成。
+背景音乐与动态编排已完成代码、自动化、Release、Player 烟测，以及耳机和扬声器主观试听。
 
 如果命令行提示项目已被另一个 Unity 实例打开，需要先关闭 Unity Editor，再重试。
 
 ## TapTap macOS PC 项目侧适配
 
-当前 TapTap 打包流程只准备 macOS PC 端包体。Android 已具备本地 APK 构建能力，但不包含 Android 商店签名、触摸操作适配、TapTap SDK、开发者账号注册或后台提交流程；iOS 尚未适配。
+当前 TapTap 打包流程只准备 macOS PC 端包体。Android 已具备本地 APK 构建、触摸操作和真机验收能力，但不包含 Android 商店签名、TapTap SDK、开发者账号注册或后台提交流程；iOS 尚未适配。
 
 ### 1. 生成 Release 上传包
 

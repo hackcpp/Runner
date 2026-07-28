@@ -52,6 +52,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private GameObject playerBody;
     private GameObject playerShadow;
     private RunnerMotor runnerMotor;
+    private RunnerTouchInput touchInput;
     private RunnerVisualRig runnerVisualRig;
     private RunnerMotionEffects runnerMotionEffects;
     private RunnerHud runnerHud;
@@ -101,6 +102,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private bool tutorialGenerated;
 
     public RunnerMotor Motor => runnerMotor;
+    public RunnerTouchInput TouchInput => touchInput;
+    public RunnerHud Hud => runnerHud;
     public RunnerVisualRig VisualRig => runnerVisualRig;
     public RunnerMotionEffects MotionEffects => runnerMotionEffects;
     public ProceduralRunnerMusic Music => music;
@@ -117,7 +120,9 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     public int TotalCreatedCubeCount => worldPool == null ? 0 : worldPool.TotalCreatedCubeCount;
     public int TotalCreatedObstacleRootCount => worldPool == null ? 0 : worldPool.TotalCreatedObstacleRootCount;
     public float Distance => distance;
+    public bool IsPlaying => state == GameState.Playing;
     public bool IsPaused => state == GameState.Paused;
+    public bool ExitRequested { get; private set; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateGame()
@@ -144,14 +149,23 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         runnerHud = RunnerHud.AttachTo(
             gameObject,
             StartRunFromHud,
+            PauseRun,
             ResumeRun,
-            StartRunFromHud);
+            StartRunFromHud,
+            RequestExit);
+        touchInput = RunnerTouchInput.AttachTo(gameObject, runnerMotor);
         ResetRun(GameState.StartScreen);
     }
 
     private void Update()
     {
         music.Tick(Time.unscaledDeltaTime);
+        touchInput.Tick(state == GameState.Playing);
+
+        if (Input.GetKeyDown(KeyCode.Escape) && HandleBackPressed())
+        {
+            return;
+        }
 
         if (state == GameState.StartScreen)
         {
@@ -178,7 +192,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
         if (state == GameState.Paused)
         {
-            if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.P))
+            if (Input.GetKeyDown(KeyCode.P))
             {
                 ResumeRun();
             }
@@ -186,7 +200,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             return;
         }
 
-        if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.P))
+        if (Input.GetKeyDown(KeyCode.P))
         {
             PauseRun();
             return;
@@ -225,6 +239,19 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     public void ResumeForTests()
     {
         ResumeRun();
+    }
+
+    public void BackForTests()
+    {
+        HandleBackPressed();
+    }
+
+    public void EndRunForTests()
+    {
+        if (state == GameState.Playing)
+        {
+            EndRun();
+        }
     }
 
     public void AdvanceWorldForTests(float meters)
@@ -286,7 +313,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             actionFeedbackPoints,
             Mathf.Clamp01(actionFeedbackTimer * 2f),
             hintSymbol,
-            hintAlpha));
+            hintAlpha,
+            Application.isMobilePlatform));
     }
 
     private void CreateMaterials()
@@ -497,7 +525,9 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         nextPatternZ = RunnerRunTuning.FirstRandomPatternZ;
         actionClearCount = 0;
         actionFeedbackPoints = RunnerScore.ActionClearPoints;
-        laneHintTimer = nextState == GameState.Playing ? 2.4f : 0f;
+        laneHintTimer = nextState == GameState.Playing
+            ? Application.isMobilePlatform ? 3.2f : 2.4f
+            : 0f;
         actionHintTimer = 0f;
         actionFeedbackTimer = 0f;
         cameraRig.ResetFeedback();
@@ -1120,6 +1150,34 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         state = GameState.Playing;
     }
 
+    private bool HandleBackPressed()
+    {
+        if (state == GameState.Playing)
+        {
+            PauseRun();
+            return true;
+        }
+
+        if (state == GameState.Paused)
+        {
+            ResumeRun();
+            return true;
+        }
+
+        RequestExit();
+        return true;
+    }
+
+    private void RequestExit()
+    {
+        ExitRequested = true;
+        RestoreGlobalPauseState();
+        if (!Application.isEditor)
+        {
+            Application.Quit();
+        }
+    }
+
     private void OnDisable()
     {
         RestoreGlobalPauseState();
@@ -1162,13 +1220,13 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             jumpHintShown = true;
             actionHintSymbol = "\u2191";
-            actionHintTimer = 2f;
+            actionHintTimer = Application.isMobilePlatform ? 2.8f : 2f;
         }
         else if (nearestActionKind == RunnerObstacleKind.Overhead && !slideHintShown)
         {
             slideHintShown = true;
             actionHintSymbol = "\u2193";
-            actionHintTimer = 2f;
+            actionHintTimer = Application.isMobilePlatform ? 2.8f : 2f;
         }
     }
 

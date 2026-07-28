@@ -25,7 +25,8 @@ public readonly struct RunnerHudViewModel
         int feedbackPoints,
         float feedbackAlpha,
         string hintSymbol,
-        float hintAlpha)
+        float hintAlpha,
+        bool touchControls)
     {
         Mode = mode;
         Score = score;
@@ -39,6 +40,7 @@ public readonly struct RunnerHudViewModel
         FeedbackAlpha = feedbackAlpha;
         HintSymbol = hintSymbol;
         HintAlpha = hintAlpha;
+        TouchControls = touchControls;
     }
 
     public RunnerHudMode Mode { get; }
@@ -53,6 +55,7 @@ public readonly struct RunnerHudViewModel
     public float FeedbackAlpha { get; }
     public string HintSymbol { get; }
     public float HintAlpha { get; }
+    public bool TouchControls { get; }
 }
 
 public sealed class RunnerHud : MonoBehaviour
@@ -63,8 +66,10 @@ public sealed class RunnerHud : MonoBehaviour
     private static readonly Color Reward = new Color(1f, 0.84f, 0.2f);
 
     private Action startAction;
+    private Action pauseAction;
     private Action resumeAction;
     private Action restartAction;
+    private Action exitAction;
     private RunnerHudMode currentMode;
     private Font font;
     private GameObject overlayRoot;
@@ -79,12 +84,28 @@ public sealed class RunnerHud : MonoBehaviour
     private Text panelDetails;
     private Text primaryButtonLabel;
     private Image comboFill;
+    private Button pauseButton;
+    private Button primaryButton;
+    private Button exitButton;
+    private RectTransform gameplaySafeArea;
+    private RectTransform overlaySafeArea;
+    private Rect appliedSafeArea;
+    private Vector2 appliedScreenSize;
+    private bool hasAppliedSafeArea;
+
+    public Button PauseButton => pauseButton;
+    public Button PrimaryButton => primaryButton;
+    public Button ExitButton => exitButton;
+    public RectTransform GameplaySafeArea => gameplaySafeArea;
+    public RectTransform OverlaySafeArea => overlaySafeArea;
 
     public static RunnerHud AttachTo(
         GameObject host,
         Action onStart,
+        Action onPause,
         Action onResume,
-        Action onRestart)
+        Action onRestart,
+        Action onExit)
     {
         RunnerHud hud = host.GetComponent<RunnerHud>();
         if (hud == null)
@@ -92,7 +113,7 @@ public sealed class RunnerHud : MonoBehaviour
             hud = host.AddComponent<RunnerHud>();
         }
 
-        hud.Initialize(onStart, onResume, onRestart);
+        hud.Initialize(onStart, onPause, onResume, onRestart, onExit);
         return hud;
     }
 
@@ -103,6 +124,7 @@ public sealed class RunnerHud : MonoBehaviour
         scoreText.gameObject.SetActive(playing);
         distanceText.gameObject.SetActive(playing);
         bestText.gameObject.SetActive(playing);
+        pauseButton.gameObject.SetActive(playing);
         if (playing)
         {
             scoreText.text = "SCORE  " + model.Score;
@@ -133,7 +155,7 @@ public sealed class RunnerHud : MonoBehaviour
         hintText.gameObject.SetActive(showHint);
         if (showHint)
         {
-            hintText.text = model.HintSymbol;
+            hintText.text = model.TouchControls ? "\u25cf   " + model.HintSymbol : model.HintSymbol;
             hintText.color = WithAlpha(Reward, model.HintAlpha);
         }
 
@@ -144,11 +166,28 @@ public sealed class RunnerHud : MonoBehaviour
         }
     }
 
-    private void Initialize(Action onStart, Action onResume, Action onRestart)
+    public void ApplySafeAreaForTests(Rect safeArea, Vector2 screenSize)
+    {
+        ApplySafeArea(safeArea, screenSize);
+    }
+
+    private void Update()
+    {
+        ApplySafeArea(Screen.safeArea, new Vector2(Screen.width, Screen.height));
+    }
+
+    private void Initialize(
+        Action onStart,
+        Action onPause,
+        Action onResume,
+        Action onRestart,
+        Action onExit)
     {
         startAction = onStart;
+        pauseAction = onPause;
         resumeAction = onResume;
         restartAction = onRestart;
+        exitAction = onExit;
         if (scoreText != null)
         {
             return;
@@ -180,8 +219,9 @@ public sealed class RunnerHud : MonoBehaviour
         scaler.matchWidthOrHeight = 0.5f;
 
         RectTransform canvasTransform = canvasObject.GetComponent<RectTransform>();
+        gameplaySafeArea = CreateSafeAreaRoot(canvasTransform, "Runner Gameplay Safe Area");
         scoreText = CreateText(
-            canvasTransform,
+            gameplaySafeArea,
             "Score",
             new Vector2(0f, 1f),
             new Vector2(0f, 1f),
@@ -192,7 +232,7 @@ public sealed class RunnerHud : MonoBehaviour
             FontStyle.Bold,
             PrimaryText);
         distanceText = CreateText(
-            canvasTransform,
+            gameplaySafeArea,
             "Distance",
             new Vector2(0f, 1f),
             new Vector2(0f, 1f),
@@ -203,7 +243,7 @@ public sealed class RunnerHud : MonoBehaviour
             FontStyle.Normal,
             SecondaryText);
         bestText = CreateText(
-            canvasTransform,
+            gameplaySafeArea,
             "Best",
             new Vector2(0f, 1f),
             new Vector2(0f, 1f),
@@ -215,7 +255,7 @@ public sealed class RunnerHud : MonoBehaviour
             SecondaryText);
 
         comboText = CreateText(
-            canvasTransform,
+            gameplaySafeArea,
             "Combo",
             new Vector2(0.5f, 1f),
             new Vector2(0.5f, 1f),
@@ -226,7 +266,7 @@ public sealed class RunnerHud : MonoBehaviour
             FontStyle.Bold,
             Reward);
         Image comboTrack = CreateImage(
-            canvasTransform,
+            gameplaySafeArea,
             "Combo Track",
             new Vector2(0.5f, 1f),
             new Vector2(0.5f, 1f),
@@ -236,7 +276,7 @@ public sealed class RunnerHud : MonoBehaviour
         comboFill = CreateStretchImage(comboTrack.rectTransform, "Combo Fill", Reward);
 
         feedbackText = CreateText(
-            canvasTransform,
+            gameplaySafeArea,
             "Action Reward",
             new Vector2(0.5f, 0.72f),
             new Vector2(0.5f, 0.5f),
@@ -247,7 +287,7 @@ public sealed class RunnerHud : MonoBehaviour
             FontStyle.Bold,
             Reward);
         hintText = CreateText(
-            canvasTransform,
+            gameplaySafeArea,
             "Action Hint",
             new Vector2(0.5f, 0.38f),
             new Vector2(0.5f, 0.5f),
@@ -258,7 +298,20 @@ public sealed class RunnerHud : MonoBehaviour
             FontStyle.Bold,
             Reward);
 
+        pauseButton = CreateButton(
+            gameplaySafeArea,
+            "Pause Run",
+            new Vector2(-20f, -18f),
+            new Vector2(64f, 64f));
+        RectTransform pauseTransform = pauseButton.GetComponent<RectTransform>();
+        pauseTransform.anchorMin = Vector2.one;
+        pauseTransform.anchorMax = Vector2.one;
+        pauseTransform.pivot = Vector2.one;
+        pauseButton.GetComponentInChildren<Text>().text = "II";
+        pauseButton.onClick.AddListener(HandlePauseButton);
+
         BuildOverlay(canvasTransform);
+        ApplySafeArea(Screen.safeArea, new Vector2(Screen.width, Screen.height));
     }
 
     private void BuildOverlay(RectTransform canvasTransform)
@@ -270,9 +323,10 @@ public sealed class RunnerHud : MonoBehaviour
         overlay.raycastTarget = false;
         overlayRoot = overlay.gameObject;
         RectTransform overlayTransform = overlay.rectTransform;
+        overlaySafeArea = CreateSafeAreaRoot(overlayTransform, "Runner Overlay Safe Area");
 
         panelTitle = CreateText(
-            overlayTransform,
+            overlaySafeArea,
             "Panel Title",
             new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f),
@@ -283,7 +337,7 @@ public sealed class RunnerHud : MonoBehaviour
             FontStyle.Bold,
             PrimaryText);
         panelScore = CreateText(
-            overlayTransform,
+            overlaySafeArea,
             "Panel Score",
             new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f),
@@ -294,7 +348,7 @@ public sealed class RunnerHud : MonoBehaviour
             FontStyle.Bold,
             Reward);
         panelDetails = CreateText(
-            overlayTransform,
+            overlaySafeArea,
             "Panel Details",
             new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f),
@@ -305,13 +359,22 @@ public sealed class RunnerHud : MonoBehaviour
             FontStyle.Normal,
             SecondaryText);
 
-        Button primaryButton = CreateButton(
-            overlayTransform,
+        primaryButton = CreateButton(
+            overlaySafeArea,
             "Primary Action",
             new Vector2(0f, -116f),
-            new Vector2(286f, 54f));
+            new Vector2(300f, 64f));
         primaryButton.onClick.AddListener(HandlePrimaryButton);
         primaryButtonLabel = primaryButton.GetComponentInChildren<Text>();
+
+        exitButton = CreateButton(
+            overlaySafeArea,
+            "Exit Game",
+            new Vector2(0f, -194f),
+            new Vector2(300f, 56f),
+            true);
+        exitButton.GetComponentInChildren<Text>().text = "EXIT";
+        exitButton.onClick.AddListener(HandleExitButton);
     }
 
     private void RenderOverlay(RunnerHudViewModel model)
@@ -320,7 +383,9 @@ public sealed class RunnerHud : MonoBehaviour
         {
             panelTitle.text = "ROOFTOP RUNNER";
             panelScore.text = "BEST  " + model.BestScore;
-            panelDetails.text = string.Empty;
+            panelDetails.text = model.TouchControls
+                ? "\u25cf    \u2190  \u2192       \u2191       \u2193"
+                : string.Empty;
             primaryButtonLabel.text = "START RUN";
             return;
         }
@@ -355,6 +420,66 @@ public sealed class RunnerHud : MonoBehaviour
         {
             restartAction?.Invoke();
         }
+    }
+
+    private void HandlePauseButton()
+    {
+        if (currentMode == RunnerHudMode.Playing)
+        {
+            pauseAction?.Invoke();
+        }
+    }
+
+    private void HandleExitButton()
+    {
+        if (currentMode != RunnerHudMode.Playing)
+        {
+            exitAction?.Invoke();
+        }
+    }
+
+    private void ApplySafeArea(Rect safeArea, Vector2 screenSize)
+    {
+        if (screenSize.x <= 0f || screenSize.y <= 0f || gameplaySafeArea == null || overlaySafeArea == null)
+        {
+            return;
+        }
+
+        if (hasAppliedSafeArea && appliedSafeArea == safeArea && appliedScreenSize == screenSize)
+        {
+            return;
+        }
+
+        Vector2 anchorMin = new Vector2(safeArea.xMin / screenSize.x, safeArea.yMin / screenSize.y);
+        Vector2 anchorMax = new Vector2(safeArea.xMax / screenSize.x, safeArea.yMax / screenSize.y);
+        anchorMin = new Vector2(Mathf.Clamp01(anchorMin.x), Mathf.Clamp01(anchorMin.y));
+        anchorMax = new Vector2(Mathf.Clamp01(anchorMax.x), Mathf.Clamp01(anchorMax.y));
+
+        ApplySafeAreaAnchors(gameplaySafeArea, anchorMin, anchorMax);
+        ApplySafeAreaAnchors(overlaySafeArea, anchorMin, anchorMax);
+        appliedSafeArea = safeArea;
+        appliedScreenSize = screenSize;
+        hasAppliedSafeArea = true;
+    }
+
+    private static void ApplySafeAreaAnchors(RectTransform target, Vector2 anchorMin, Vector2 anchorMax)
+    {
+        target.anchorMin = anchorMin;
+        target.anchorMax = anchorMax;
+        target.offsetMin = Vector2.zero;
+        target.offsetMax = Vector2.zero;
+    }
+
+    private static RectTransform CreateSafeAreaRoot(RectTransform parent, string objectName)
+    {
+        GameObject safeAreaObject = new GameObject(objectName, typeof(RectTransform));
+        safeAreaObject.transform.SetParent(parent, false);
+        RectTransform rect = safeAreaObject.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        return rect;
     }
 
     private Text CreateText(
@@ -436,7 +561,8 @@ public sealed class RunnerHud : MonoBehaviour
         RectTransform parent,
         string objectName,
         Vector2 anchoredPosition,
-        Vector2 size)
+        Vector2 size,
+        bool secondary = false)
     {
         GameObject buttonObject = new GameObject(objectName, typeof(RectTransform), typeof(Image), typeof(Button));
         buttonObject.transform.SetParent(parent, false);
@@ -447,13 +573,17 @@ public sealed class RunnerHud : MonoBehaviour
         rect.anchoredPosition = anchoredPosition;
         rect.sizeDelta = size;
 
+        Color normalColor = secondary ? new Color(0.08f, 0.12f, 0.14f) : Accent;
+        Color highlightedColor = secondary ? new Color(0.14f, 0.2f, 0.22f) : new Color(0.08f, 0.82f, 0.88f);
+        Color pressedColor = secondary ? new Color(0.04f, 0.07f, 0.08f) : new Color(0.03f, 0.58f, 0.66f);
+
         Image image = buttonObject.GetComponent<Image>();
-        image.color = Accent;
+        image.color = normalColor;
         Button button = buttonObject.GetComponent<Button>();
         ColorBlock colors = button.colors;
-        colors.normalColor = Accent;
-        colors.highlightedColor = new Color(0.08f, 0.82f, 0.88f);
-        colors.pressedColor = new Color(0.03f, 0.58f, 0.66f);
+        colors.normalColor = normalColor;
+        colors.highlightedColor = highlightedColor;
+        colors.pressedColor = pressedColor;
         colors.selectedColor = colors.highlightedColor;
         colors.fadeDuration = 0.08f;
         button.colors = colors;
