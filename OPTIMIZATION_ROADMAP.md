@@ -15,7 +15,7 @@
 - 目标平台：macOS 键盘操作；Android APK 构建验证
 - 游戏形态：三车道无尽跑酷作品集切片
 - 已验证基线：PlayMode `22/22`、macOS Release 通用二进制、Android IL2CPP ARM64 APK、`1280x720` 与 `1440x900` 窗口烟测
-- GitHub 基线提交：`419c37c` (`Record Android build delivery`)
+- GitHub 基线提交：`78c692e` (`Add Android touch controls and exit flow`)
 
 ## 总体进度
 
@@ -397,7 +397,7 @@
 | 2026-07-25 | 已完成 | 为 P1 至 P5 补充统一的难度和改动规模估算 | 按当前组件边界、代码行数和验证范围复核 | `86c7232` |
 | 2026-07-25 | 已完成 | P1 角色轮廓与动作表现：程序化人物、状态姿态与动作效果 | PlayMode `18/18`；Release、Universal Binary、签名与双尺寸烟测通过 | `86c7232` |
 | 2026-07-27 | 已完成 | P2 背景音乐与动态编排：64 拍三层循环、状态混音与动作闪避 | PlayMode `19/19`；Release、签名、Player 烟测及耳机与扬声器试听通过 | `2b865fe` |
-| 2026-07-28 | 已完成 | Android 触摸与真机适配：四向手势、新手引导、触控流程、安全区域、返回键和明确退出入口 | PlayMode `22/22`；双平台 Release、签名、桌面双尺寸、退出与 Android ARM64 真机烟测通过 | 待提交 |
+| 2026-07-28 | 已完成 | Android 触摸与真机适配：四向手势、新手引导、触控流程、安全区域、返回键和明确退出入口 | PlayMode `22/22`；双平台 Release、签名、桌面双尺寸、退出与 Android ARM64 真机烟测通过 | `78c692e` |
 
 ## 维护规则
 
