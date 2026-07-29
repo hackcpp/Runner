@@ -174,10 +174,7 @@ Unity Editor 构建工具脚本。
 可通过 Unity 菜单构建：
 
 ```text
-Runner -> Build -> Mac Development
-Runner -> Build -> Mac Release
-Runner -> Build -> Mac Release Zip For TapTap
-Runner -> Build -> Android Development APK
+Runner -> Build -> Mac Debug
 Runner -> Build -> Android Release APK
 ```
 
@@ -189,7 +186,7 @@ Runner -> Build -> Android Release APK
   -nographics \
   -quit \
   -projectPath /Users/lucas.l/Workspace/code/Runner \
-  -executeMethod RunnerBuild.BuildMacDevelopment \
+  -executeMethod RunnerBuild.BuildMacDebug \
   -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
 ```
 
@@ -197,12 +194,6 @@ Runner -> Build -> Android Release APK
 
 ```text
 Builds/RooftopRunner.app
-```
-
-TapTap macOS 上传包默认输出：
-
-```text
-Builds/RooftopRunner-mac-0.1.0.zip
 ```
 
 Android Release 默认输出：
@@ -217,7 +208,7 @@ PlayMode 冒烟测试，用于验证运行时能创建游戏控制器、玩家�
 
 ### `Assets/Brand/AppIcon.png`
 
-应用图标源图。构建脚本会在 macOS Release 构建后把它转换成 `PlayerIcon.icns`，写入 `.app`，并重新做 ad-hoc 签名。
+应用图标源图。构建脚本会在 Mac Debug 构建后把它转换成 `PlayerIcon.icns`，写入 `.app`，并重新做 ad-hoc 签名。
 
 ## 构建
 
@@ -226,25 +217,12 @@ PlayMode 冒烟测试，用于验证运行时能创建游戏控制器、玩家�
 推荐使用统一菜单入口。日常调试用：
 
 ```text
-Runner -> Build -> Mac Development
+Runner -> Build -> Mac Debug
 ```
 
-准备发布用：
+正式打包或上架前才构建 Android APK：
 
 ```text
-Runner -> Build -> Mac Release
-```
-
-准备 TapTap PC 上传包用：
-
-```text
-Runner -> Build -> Mac Release Zip For TapTap
-```
-
-Android 真机安装验证用：
-
-```text
-Runner -> Build -> Android Development APK
 Runner -> Build -> Android Release APK
 ```
 
@@ -266,7 +244,7 @@ Assets/Scenes/SampleScene.unity
 
 ### 命令行构建
 
-Development 构建：
+Mac Debug 构建：
 
 ```bash
 /Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
@@ -274,35 +252,11 @@ Development 构建：
   -nographics \
   -quit \
   -projectPath /Users/lucas.l/Workspace/code/Runner \
-  -executeMethod RunnerBuild.BuildMacDevelopment \
+  -executeMethod RunnerBuild.BuildMacDebug \
   -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
 ```
 
-Release 构建：
-
-```bash
-/Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
-  -batchmode \
-  -nographics \
-  -quit \
-  -projectPath /Users/lucas.l/Workspace/code/Runner \
-  -executeMethod RunnerBuild.BuildMacReleaseForCommandLine \
-  -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
-```
-
-Release 构建并生成 TapTap zip 包：
-
-```bash
-/Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
-  -batchmode \
-  -nographics \
-  -quit \
-  -projectPath /Users/lucas.l/Workspace/code/Runner \
-  -executeMethod RunnerBuild.BuildMacReleaseZipForTapTapCommandLine \
-  -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
-```
-
-Android ARM64 Release APK：
+Android ARM64 Release APK（仅正式打包时运行）：
 
 ```bash
 /Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
@@ -329,7 +283,9 @@ Orientation: Landscape
 Output: Builds/RooftopRunner-android-0.1.0.apk
 ```
 
-当前 APK 使用默认 Android 调试证书签名，只用于安装和真机验证。横屏触摸闭环已在 Android ARM64 真机通过操作、安全区域、音频、发热和帧率烟测；发布到应用商店前还需要配置正式 keystore。
+Release APK 强制使用项目独立证书签名，不会回退到 Android Debug 证书。keystore 保存在本地忽略目录 `Distribution/Signing/RooftopRunner-release.keystore`，alias 为 `rooftoprunner`；密码从 macOS Keychain 服务 `RooftopRunner Android Release` 的 `storepass`、`keypass` 账户读取，也可分别通过 `ROOFTOP_RUNNER_ANDROID_STORE_PASS`、`ROOFTOP_RUNNER_ANDROID_KEY_PASS` 注入。证书 SHA-256 为 `3E:BC:01:D8:28:9F:5D:8C:AA:66:9F:F5:C8:AD:60:FA:6E:5D:6E:37:97:1F:D3:80:2E:C1:53:AF:2F:B8:A7:10`。
+
+keystore 与 Keychain 凭据必须分别做安全的离机备份，丢失后无法为同一 Android 应用发布可升级版本。不要把 keystore、密码或 Keychain 导出提交到 Git。
 
 运行构建产物：
 
@@ -373,19 +329,19 @@ PlayMode Test Runner 会在测试结束后自行退出；不要为该命令添�
 - 音频稳定性：重开、暂停、恢复及 10 分钟等效运行后仍保持 4 个音源和 3 个音乐片段，不重复创建
 - 跑局公平性：连续验证 `5000` 个固定种子，每局 `1200m`，无无解序列
 - 长跑稳定性：约 `10` 分钟距离模拟后，活动几何体、障碍数量和对象池容量保持有界
-- macOS Release：`x86_64 + arm64` 通用二进制，版本 `0.1.0`
-- Android Release：IL2CPP ARM64 APK，最低 API 24、目标 API 35，版本 `0.1.0`
+- Mac Debug：`x86_64 + arm64` 通用二进制，版本 `0.1.0`，用于日常本地测试
+- Android Release：仅正式打包时生成；IL2CPP ARM64 APK，最低 API 24、目标 API 35，版本 `0.1.0`
 - Android 触摸：四向滑动、触控流程按钮、安全区域、返回键和明确退出入口通过自动化及 ARM64 真机烟测
-- 签名：`codesign --verify --deep --strict` 通过
+- 签名：Mac Debug 的 `codesign --verify --deep --strict` 与 Android Release APK v2 校验通过
 - 窗口验证：`1280x720` 与 `1440x900` 下完成开始、换道、暂停、恢复、结算和退出烟测
 
-背景音乐与动态编排已完成代码、自动化、Release、Player 烟测，以及耳机和扬声器主观试听。
+背景音乐与动态编排已完成代码、自动化、Player 烟测，以及耳机和扬声器主观试听。
 
 如果命令行提示项目已被另一个 Unity 实例打开，需要先关闭 Unity Editor，再重试。
 
 ## TapTap 发布准备
 
-当前 TapTap 开发者后台提供 Android、TapTap Windows 和 Steam 配置，没有独立 macOS 包上传入口。因此当前上架主线应使用已经完成触控与真机验收的 Android 版本；macOS ZIP 继续作为作品集或其他渠道交付包，不再描述为 TapTap 可直接上传的 PC 包。
+当前 TapTap 开发者后台提供 Android、TapTap Windows 和 Steam 配置，没有独立 macOS 包上传入口。因此当前上架主线使用 Android Release APK；Mac 只保留本地 Debug `.app`，不生成发布 ZIP。
 
 商店名称、定位文案、上传素材、发布清单和隐私政策草案统一保存在本地 `Distribution/TapTap/`。根目录 `Distribution/` 是不提交到 GitHub 的发布工作区，已由 `.gitignore` 整体排除，因此 README 不链接其中的本地文件。
 
@@ -399,7 +355,7 @@ PlayMode Test Runner 会在测试结束后自行退出；不要为该命令添�
 
 `Assets/Brand/AppIcon.png` 与 TapTap 上传图标必须使用同一画稿；两者只允许因目标平台要求存在格式、尺寸、色彩配置或透明通道差异，不能使用不同构图或风格。
 
-Android 已具备本地 APK 构建、横屏触控和至少一台 ARM64 真机验收能力，但正式上架仍需独立 keystore、隐私政策、资质与防沉迷材料；iOS 尚未适配。
+Android 已具备正式签名 APK 构建、横屏触控和至少一台 ARM64 真机验收能力，但正式上架仍需安全版本 Unity 重建、离机备份签名材料、隐私政策、资质与防沉迷材料；iOS 尚未适配。
 
 ### 1. 生成本地 Release 包
 
@@ -415,33 +371,7 @@ Runner -> Build -> Android Release APK
 Builds/RooftopRunner-android-0.1.0.apk
 ```
 
-当前 APK 使用调试签名，只能用于测试；正式上传前必须配置并备份独立 Android keystore，然后重新构建和真机回归。
-
-macOS 作品集或其他渠道包：
-
-Unity 菜单：
-
-```text
-Runner -> Build -> Mac Release Zip For TapTap
-```
-
-或命令行：
-
-```bash
-/Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
-  -batchmode \
-  -nographics \
-  -quit \
-  -projectPath /Users/lucas.l/Workspace/code/Runner \
-  -executeMethod RunnerBuild.BuildMacReleaseZipForTapTapCommandLine \
-  -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
-```
-
-生成文件：
-
-```text
-Builds/RooftopRunner-mac-0.1.0.zip
-```
+当前 APK 已使用项目独立证书完成 v2 签名。正式上传前仍需升级到安全版本 Unity 后重新构建、核验签名并在真机回归。
 
 ### 2. macOS 本机验包
 
@@ -458,15 +388,9 @@ open /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app
 - `A` / `D` 能切换车道
 - 撞障碍后能进入结算
 - `R` 能重开
-- Release 包没有 Development Build 水印
+- Development Build 水印与调试功能符合本地测试用途
 
 ### 3. 当前包体信息
-
-项目侧已经生成 macOS 分发包：
-
-```text
-Builds/RooftopRunner-mac-0.1.0.zip
-```
 
 macOS bundle 内部启动项路径：
 
@@ -492,7 +416,7 @@ com.hackcpp.rooftoprunner
 
 - ISBN 与游戏资质；后台提示正式上线开放下载或内购时必须提供。
 - 未成年人防沉迷系统和接入视频证明；后台提示 APK 测试或下载需要提供。
-- Android 正式签名、公开 HTTPS 隐私政策和正确的平台、类型、包名配置。
+- Android 签名材料离机备份、公开 HTTPS 隐私政策和正确的平台、类型、包名配置。
 - 已生成的 3 张 `1920x1080` 横屏实机截图、18 秒 H.264 视频和 `1920x1080` 标题宣传图需要在 Android 真机对照后手动上传。
 - 隐私政策草案仍需填写发布主体、联系邮箱和生效日期，并部署为公开 HTTPS 页面。
 

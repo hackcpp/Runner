@@ -16,7 +16,8 @@ Rooftop Runner 是一个用于作品集展示的 Unity 3D 三车道无尽跑酷�
 - Bundle Identifier：`com.hackcpp.rooftoprunner`
 - 许可证：Unity Personal
 - 测试基线：PlayMode `23/23`
-- Release：`x86_64 + arm64` Universal Binary，ad-hoc 签名
+- 本地构建：Mac Debug，`x86_64 + arm64` Universal Binary，ad-hoc 签名
+- 正式打包：仅按需构建 Android ARM64 Release APK，使用项目独立证书签名
 
 除非用户明确扩大范围，不迁移到 Input System、URP、Rigidbody 控制、正式 UI 框架、iOS 或手柄。
 
@@ -76,7 +77,7 @@ Unity 可执行文件：
 
 ### `Assets/Editor/RunnerBuild.cs`
 
-是 macOS 构建、图标、签名和 TapTap ZIP 的唯一统一入口。构建相关设置应在这里固化，保证菜单构建与命令行构建一致。
+是 Mac Debug 与 Android Release APK 的唯一统一入口。构建相关设置应在这里固化，保证菜单构建与命令行构建一致；日常开发只构建 Mac Debug，正式打包时才构建 Android APK。
 
 ## 玩法不变量
 
@@ -114,7 +115,7 @@ Unity 可执行文件：
 
 Unity Personal 必须保留 Unity Splash Screen 和 Unity Logo。不得通过修改 Player 二进制绕过许可证限制。
 
-Release 构建必须保持：
+Player 构建必须保持：
 
 - Splash Screen 开启
 - Unity Logo 开启
@@ -180,9 +181,9 @@ rg 'testcasecount|result="(Passed|Failed)"' unity-playmode-results.xml
 - 四向触摸手势、触控流程按钮、安全区域和 Android 返回键
 - 屋顶视觉几何体无 PhysX Collider
 
-## macOS 构建
+## 构建
 
-Release 命令：
+日常开发只构建 Mac Debug：
 
 ```bash
 /Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
@@ -190,11 +191,11 @@ Release 命令：
   -nographics \
   -quit \
   -projectPath /Users/lucas.l/Workspace/code/Runner \
-  -executeMethod RunnerBuild.BuildMacReleaseForCommandLine \
+  -executeMethod RunnerBuild.BuildMacDebug \
   -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
 ```
 
-TapTap ZIP 命令：
+正式打包或上架前才构建 Android Release APK：
 
 ```bash
 /Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity \
@@ -202,8 +203,8 @@ TapTap ZIP 命令：
   -nographics \
   -quit \
   -projectPath /Users/lucas.l/Workspace/code/Runner \
-  -executeMethod RunnerBuild.BuildMacReleaseZipForTapTapCommandLine \
-  -logFile /Users/lucas.l/Workspace/code/Runner/unity-build.log
+  -executeMethod RunnerBuild.BuildAndroidReleaseForCommandLine \
+  -logFile /Users/lucas.l/Workspace/code/Runner/unity-android-build.log
 ```
 
 构建后至少验证：
@@ -270,8 +271,8 @@ Unity Editor 打开期间不要删除 `Library`、`Temp`、`Logs` 或 `UserSetti
 1. `git diff --check`
 2. 检查 `git status -sb`，确认没有意外文件
 3. 运行相关 PlayMode 测试；共享玩法或生成改动运行全量测试
-4. 影响 Player、项目设置、资源或发布的改动重新构建 Release
-5. 检查 Universal Binary、签名和 Player 日志
+4. 影响 Player、项目设置或资源的开发改动重建 Mac Debug；正式打包或上架前才构建 Android Release APK
+5. 日常开发检查 Mac Debug 的 Universal Binary、签名和 Player 日志；正式打包时另查 APK 签名、包信息和哈希
 6. 视觉或 HUD 改动实际检查两个窗口尺寸
 7. 更新 `OPTIMIZATION_ROADMAP.md`
 8. 清理本轮生成的日志、测试结果和过期构建输出

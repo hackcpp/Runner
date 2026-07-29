@@ -36,6 +36,7 @@
 | 已完成 | Android 触摸与真机适配 | 横屏手势、移动端 HUD、安全区域、返回键和明确退出入口 | PlayMode `22/22`、双平台 Release、桌面双尺寸与 Android ARM64 真机烟测通过 |
 | 进行中 | 新手手势引导可读性 | 用手指、滑动轨迹和方向动画替换含义模糊的静态黄色圆点 | PlayMode 与双平台构建通过；待 Android 真机手动验收 |
 | 进行中 | TapTap 上架材料准备 | 商店命名、定位文案、正式图标、素材规格与发布缺口清单 | 图标和文案已准备；待 Android 对照、资质与正式发布 |
+| 已完成 | 构建矩阵与 Android Release 正式签名 | 日常仅构建 Mac Debug；正式打包仅构建已签名 Android Release APK | PlayMode `23/23`、Mac Debug、APK v2 正式签名与包信息校验通过 |
 | 已完成 | 发布材料目录隔离 | Git 忽略本地发布工作区；区分构建图标、作品集截图与商店上传导出件 | 忽略规则、跟踪状态、路径引用和媒体哈希检查通过 |
 
 ## 最近完成：Android 平台构建适配
@@ -235,6 +236,41 @@
 - APK `application-label` 与 TapTap 页面名称完全一致，为 `天台疾跑`。
 - `com.hackcpp.rooftoprunner`、版本 `0.1.0`、VersionCode `1`、ARM64、最低 API 24 和目标 API 35 保持不变。
 - PlayMode 全量测试、Android Release 构建、APK v2 签名校验与 `git diff --check` 通过。
+
+## 最近完成：Android Release 正式签名与构建矩阵收敛
+
+状态：`已完成`
+
+目标：让 Android Release 构建强制使用项目独立证书，同时避免把 keystore、密码或其他敏感材料提交到 Git；收敛构建矩阵，日常开发只构建 Mac Debug，正式打包时才构建 Android Release APK。
+
+### 计划范围
+
+- [x] 在本地 `Distribution/Signing/` 生成项目独立 release keystore，并确认目录继续被 Git 忽略。
+- [x] 使用随机强密码保护 keystore 和 key，密码只保存到 macOS Keychain。
+- [x] Android Release 构建自动读取 Keychain 或专用环境变量；凭据缺失时明确失败，不回退到 Debug 签名。
+- [x] 删除 Android Development、macOS Release 和 macOS ZIP 入口，只保留 Mac Debug 与 Android Release APK。
+- [x] 明确日常开发只构建 Mac Debug，Android Release APK 仅在正式打包或上架前构建。
+- [x] 重新构建 APK，使用 `apksigner` 核对 v2 签名、证书 DN、SHA-256 指纹和非 Debug 证书。
+- [x] 更新 README、AGENTS.md、TapTap 清单和上传指南中的签名状态、备份要求与构建说明。
+- [x] 重建并烟测 Mac Debug，运行完整 PlayMode 后完成清理。
+
+### 验收结果
+
+- Android Release APK 使用 v2 签名，证书 DN 为 `CN=Rooftop Runner, OU=Release, O=hackcpp`，证书 SHA-256 为 `3E:BC:01:D8:28:9F:5D:8C:AA:66:9F:F5:C8:AD:60:FA:6E:5D:6E:37:97:1F:D3:80:2E:C1:53:AF:2F:B8:A7:10`。
+- APK SHA-256 为 `79ab6dca27f0e6b2ddb2b2fc289b6d3a30f564d50d7d14a8f6d755e3f21b8d79`；包名、标签、版本、ARM64、最低 API 24 和目标 API 35 均通过 `aapt` 核对。
+- Mac Debug 重建成功，调试器已启用，产物为 `x86_64 + arm64` Universal Binary，严格签名和启动日志检查通过。
+- 完整 PlayMode `23/23` 通过；Android Development APK、Mac Release 与 Mac ZIP 入口及过期产物已清理。
+- `Distribution/` 继续被 Git 整体忽略，keystore 未被跟踪；密码未写入仓库、日志或文档。
+- keystore 与 Keychain 凭据的安全离机备份仍需由持有人完成；Unity `2022.3.67f2` 安全升级仍是正式上传前的独立阻塞项。
+
+### 完成标准
+
+- Release APK 的签名证书不再是 `CN=Android Debug`，且 APK v2 校验通过。
+- release keystore、密码和 Keychain 导出均不被 Git 跟踪，仓库中不出现明文凭据。
+- keystore 路径、alias、证书 SHA-256 和 APK SHA-256 有明确记录，密码不出现在日志或文档中。
+- 缺失凭据时 Android Release 构建失败并给出恢复说明，不存在 Debug APK 入口或签名回退。
+- 日常只构建 Mac Debug；Android Release 仅在正式打包时构建。
+- 完整 PlayMode、Mac Debug、一次正式签名 Android Release 构建和 `git diff --check` 通过。
 
 ## 最近完成：背景音乐与动态编排
 
@@ -510,11 +546,11 @@
 - 根目录 `*.log`、测试结果 XML 和临时截图日志。
 - Unity 或 IDE 自动生成的 `*.csproj` 与 `*.sln`。
 - `.DS_Store`、空目录和已经由本台账替代的临时计划文件。
-- 不再对应当前源码的旧 ZIP；TapTap ZIP 仅在实际交付前重新生成。
+- 不再对应当前源码的旧 APK 或 ZIP；macOS 不再生成发布 ZIP。
 
 ### 默认保留
 
-- `Builds/RooftopRunner.app`：最近一次通过验证的本地 Release。
+- `Builds/RooftopRunner.app`：最近一次通过验证的本地 Debug。
 - `Library`、`Temp`、`Logs`、`UserSettings`：Unity Editor 打开期间正在使用的本地状态。
 - `Portfolio`、源码、测试、项目设置和所有未提交修改。
 
@@ -547,6 +583,7 @@
 | 2026-07-29 | 进行中 | TapTap 上架材料：命名文案、全新图标、3 张截图、18 秒视频、标题宣传图、上传指南和隐私草案 | PlayMode `23/23`；Release、签名、432 帧连续采集和素材规格检查通过；待 Android 对照、资质与正式发布 | `75d7927` |
 | 2026-07-29 | 已完成 | 隔离本地 `Distribution/`，并区分构建图标、作品集截图和 TapTap 上传导出件 | Git 忽略与零跟踪文件、旧路径零引用、媒体 SHA-256 和 `git diff --check` 通过 | `75d7927` |
 | 2026-07-29 | 已完成 | 使用用户提供的新母版统一构建图标与 TapTap 上传图标，固化同画稿规则 | 两端 PNG 内容一致；macOS Universal、签名、打包图标与 Android launcher icon、APK v2 校验通过 | `75d7927` |
+| 2026-07-29 | 已完成 | 收敛为日常 Mac Debug、正式 Android Release，并完成 Android 项目独立证书签名 | PlayMode `23/23`；Mac Debug、APK v2 正式签名、包信息与 Git 忽略校验通过 | — |
 | 2026-07-29 | 待规划 | 记录 P7 画面品质与宣传图对齐，后续先做视觉标杆切片 | 当前不实施，不执行测试或构建 | — |
 
 ## 维护规则

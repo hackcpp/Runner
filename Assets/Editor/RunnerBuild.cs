@@ -3,59 +3,32 @@ using UnityEngine;
 
 public static class RunnerBuild
 {
-    private const string AppName = "RooftopRunner";
     private const string DesktopProductName = "Rooftop Runner";
     private const string AndroidProductName = "天台疾跑";
     private const string CompanyName = "hackcpp";
     private const string BundleIdentifier = "com.hackcpp.rooftoprunner";
     private const string Version = "0.1.0";
     private const string AppOutputPath = "Builds/RooftopRunner.app";
-    private const string AndroidDevelopmentOutputPath = "Builds/RooftopRunner-android-development.apk";
     private const string AndroidReleaseOutputPath = "Builds/RooftopRunner-android-0.1.0.apk";
-    private const string TapTapZipPath = "Builds/RooftopRunner-mac-0.1.0.zip";
+    private const string AndroidReleaseKeystorePath = "Distribution/Signing/RooftopRunner-release.keystore";
+    private const string AndroidReleaseKeyAlias = "rooftoprunner";
+    private const string AndroidSigningKeychainService = "RooftopRunner Android Release";
+    private const string AndroidStorePasswordEnvironmentVariable = "ROOFTOP_RUNNER_ANDROID_STORE_PASS";
+    private const string AndroidKeyPasswordEnvironmentVariable = "ROOFTOP_RUNNER_ANDROID_KEY_PASS";
     private const string IconPath = "Assets/Brand/AppIcon.png";
     private static readonly Color SplashBackgroundColor = new Color(0.055f, 0.07f, 0.11f);
     private static readonly string[] Scenes = { "Assets/Scenes/SampleScene.unity" };
 
-    [MenuItem("Runner/Build/Mac Development")]
-    public static void BuildMacDevelopment()
+    [MenuItem("Runner/Build/Mac Debug")]
+    public static void BuildMacDebug()
     {
-        BuildMac(AppOutputPath, BuildOptions.Development);
-    }
-
-    [MenuItem("Runner/Build/Mac Release")]
-    public static void BuildMacRelease()
-    {
-        BuildMac(AppOutputPath, BuildOptions.None);
-    }
-
-    [MenuItem("Runner/Build/Mac Release Zip For TapTap")]
-    public static void BuildMacReleaseZipForTapTap()
-    {
-        BuildMacRelease();
-        PackageMacAppForTapTap();
-    }
-
-    [MenuItem("Runner/Build/Android Development APK")]
-    public static void BuildAndroidDevelopment()
-    {
-        BuildAndroid(AndroidDevelopmentOutputPath, BuildOptions.Development | BuildOptions.AllowDebugging);
+        BuildMac(AppOutputPath, BuildOptions.Development | BuildOptions.AllowDebugging);
     }
 
     [MenuItem("Runner/Build/Android Release APK")]
     public static void BuildAndroidRelease()
     {
-        BuildAndroid(AndroidReleaseOutputPath, BuildOptions.None);
-    }
-
-    public static void BuildMacReleaseForCommandLine()
-    {
-        BuildMacRelease();
-    }
-
-    public static void BuildMacReleaseZipForTapTapCommandLine()
-    {
-        BuildMacReleaseZipForTapTap();
+        BuildAndroid(AndroidReleaseOutputPath);
     }
 
     public static void BuildAndroidReleaseForCommandLine()
@@ -76,7 +49,7 @@ public static class RunnerBuild
         ApplyMacIcon(outputPath);
     }
 
-    private static void BuildAndroid(string outputPath, BuildOptions buildOptions)
+    private static void BuildAndroid(string outputPath)
     {
         if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.Android, BuildTarget.Android))
         {
@@ -90,7 +63,7 @@ public static class RunnerBuild
             Scenes,
             outputPath,
             BuildTarget.Android,
-            buildOptions));
+            BuildOptions.None));
     }
 
     private static void ApplyMacPlayerSettings()
@@ -109,7 +82,7 @@ public static class RunnerBuild
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
         PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevel35;
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
-        PlayerSettings.Android.useCustomKeystore = false;
+        ApplyAndroidSigningSettings();
         PlayerSettings.SetScriptingBackend(BuildTargetGroup.Android, ScriptingImplementation.IL2CPP);
         PlayerSettings.defaultInterfaceOrientation = UIOrientation.AutoRotation;
         PlayerSettings.allowedAutorotateToPortrait = false;
@@ -117,6 +90,65 @@ public static class RunnerBuild
         PlayerSettings.allowedAutorotateToLandscapeLeft = true;
         PlayerSettings.allowedAutorotateToLandscapeRight = true;
         EditorUserBuildSettings.buildAppBundle = false;
+    }
+
+    private static void ApplyAndroidSigningSettings()
+    {
+        string keystorePath = System.IO.Path.GetFullPath(AndroidReleaseKeystorePath);
+        if (!System.IO.File.Exists(keystorePath))
+        {
+            throw new System.IO.FileNotFoundException(
+                "Missing Android release keystore. Restore the local signing backup to: " +
+                AndroidReleaseKeystorePath,
+                keystorePath);
+        }
+
+        PlayerSettings.Android.useCustomKeystore = true;
+        PlayerSettings.Android.keystoreName = keystorePath;
+        PlayerSettings.Android.keystorePass = ReadAndroidSigningSecret(
+            AndroidStorePasswordEnvironmentVariable,
+            "storepass");
+        PlayerSettings.Android.keyaliasName = AndroidReleaseKeyAlias;
+        PlayerSettings.Android.keyaliasPass = ReadAndroidSigningSecret(
+            AndroidKeyPasswordEnvironmentVariable,
+            "keypass");
+    }
+
+    private static string ReadAndroidSigningSecret(string environmentVariable, string keychainAccount)
+    {
+        string value = System.Environment.GetEnvironmentVariable(environmentVariable);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        if (Application.platform == RuntimePlatform.OSXEditor)
+        {
+            string arguments = "find-generic-password -s \"" +
+                               AndroidSigningKeychainService +
+                               "\" -a \"" +
+                               keychainAccount +
+                               "\" -w";
+            try
+            {
+                value = RunCommand("/usr/bin/security", arguments, ".").Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+            catch (System.Exception)
+            {
+                // The error below gives the same recovery path for missing or inaccessible Keychain items.
+            }
+        }
+
+        throw new System.InvalidOperationException(
+            "Missing Android release signing secret. Restore the macOS Keychain item '" +
+            AndroidSigningKeychainService +
+            "' or set " +
+            environmentVariable +
+            ".");
     }
 
     private static Texture2D ApplyCommonPlayerSettings(string productName)
@@ -147,23 +179,6 @@ public static class RunnerBuild
         PlayerSettings.SplashScreen.backgroundPortrait = null;
         PlayerSettings.SplashScreen.blurBackgroundImage = false;
         PlayerSettings.SplashScreen.overlayOpacity = 1f;
-    }
-
-    private static void PackageMacAppForTapTap()
-    {
-        if (!System.IO.Directory.Exists(AppOutputPath))
-        {
-            throw new System.IO.DirectoryNotFoundException("Missing macOS app build: " + AppOutputPath);
-        }
-
-        if (System.IO.File.Exists(TapTapZipPath))
-        {
-            System.IO.File.Delete(TapTapZipPath);
-        }
-
-        string arguments = "-c -k --norsrc --keepParent \"" + AppName + ".app\" \"" + System.IO.Path.GetFileName(TapTapZipPath) + "\"";
-        string output = RunCommand("/usr/bin/ditto", arguments, "Builds");
-        Debug.Log("TapTap macOS package ready: " + TapTapZipPath + "\n" + output);
     }
 
     private static void ApplyMacIcon(string appPath)
