@@ -10,7 +10,9 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         StartScreen,
         Playing,
         Paused,
-        GameOver
+        GameOver,
+        LevelComplete,
+        CampaignComplete
     }
 
     private sealed class Obstacle
@@ -31,6 +33,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private const float StartingSpeed = RunnerRunTuning.StartingSpeed;
     private const float ObstacleDepthTolerance = 0.72f;
     private const float ObstacleLaneTolerance = 0.82f;
+    private const float CheckpointRecoverySafeDistance = 16f;
+    private const float FinishVisualObstacleDistance = 42f;
     private const string BestDistanceKey = "EndlessRunner.HighScore";
     private const string BestScoreKey = "EndlessRunner.BestScore";
     private const string BestComboKey = "EndlessRunner.BestCombo";
@@ -87,10 +91,16 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private int actionClearCount;
     private int actionFeedbackPoints;
     private int bestCombo;
+    private int activeLevelIndex;
+    private int activeRunSeed;
+    private int remainingLives;
+    private int checkpointIndex;
     private int bestScore;
     private int? nextRunSeed;
     private float nextPatternZ;
     private float distance;
+    private float furthestDistance;
+    private float obstacleGenerationMinimumZ;
     private float highScore;
     private float currentSpeed;
     private float laneHintTimer;
@@ -107,7 +117,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     public RunnerVisualRig VisualRig => runnerVisualRig;
     public RunnerMotionEffects MotionEffects => runnerMotionEffects;
     public ProceduralRunnerMusic Music => music;
-    public int CurrentScore => RunnerScore.CalculateWithBonus(distance, combo.TotalBonusScore);
+    public int CurrentScore => RunnerScore.CalculateWithBonus(furthestDistance, combo.TotalBonusScore);
     public int ActionClearCount => actionClearCount;
     public int ActionBonusScore => combo.TotalBonusScore;
     public int CurrentCombo => combo.ComboCount;
@@ -120,9 +130,18 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     public int TotalCreatedCubeCount => worldPool == null ? 0 : worldPool.TotalCreatedCubeCount;
     public int TotalCreatedObstacleRootCount => worldPool == null ? 0 : worldPool.TotalCreatedObstacleRootCount;
     public float Distance => distance;
+    public int ActiveLevelNumber => ActiveLevel.Number;
+    public int RemainingLives => remainingLives;
+    public int CheckpointIndex => checkpointIndex;
+    public float LevelTargetDistance => ActiveLevel.TargetDistance;
+    public float RecoverySafetyDistance => CheckpointRecoverySafeDistance;
     public bool IsPlaying => state == GameState.Playing;
     public bool IsPaused => state == GameState.Paused;
+    public bool IsLevelComplete => state == GameState.LevelComplete;
+    public bool IsCampaignComplete => state == GameState.CampaignComplete;
     public bool ExitRequested { get; private set; }
+
+    private RunnerLevelDefinition ActiveLevel => RunnerLevelCatalog.Levels[activeLevelIndex];
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateGame()
@@ -148,10 +167,10 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         CreateActionParticles();
         runnerHud = RunnerHud.AttachTo(
             gameObject,
-            StartRunFromHud,
+            HandlePrimaryAction,
             PauseRun,
             ResumeRun,
-            StartRunFromHud,
+            HandlePrimaryAction,
             RequestExit);
         touchInput = RunnerTouchInput.AttachTo(gameObject, runnerMotor);
         ResetRun(GameState.StartScreen);
@@ -172,7 +191,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return))
             {
-                ResetRun(GameState.Playing);
+                BeginCampaign();
             }
 
             AnimateIdlePlayer();
@@ -184,7 +203,18 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.R))
             {
-                ResetRun(GameState.Playing);
+                RestartLevelFromCheckpoint();
+            }
+
+            UpdateCamera();
+            return;
+        }
+
+        if (state == GameState.LevelComplete || state == GameState.CampaignComplete)
+        {
+            if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return))
+            {
+                HandlePrimaryAction();
             }
 
             UpdateCamera();
@@ -208,6 +238,11 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         }
 
         AdvanceRunner();
+        if (TryCompleteLevel())
+        {
+            UpdateCamera();
+            return;
+        }
         GenerateWorldAhead();
         CleanupWorldBehind();
         CheckObstacleHits();
@@ -223,13 +258,57 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     public void StartRunForTests(int seed)
     {
+        activeLevelIndex = 0;
+        checkpointIndex = 0;
         nextRunSeed = seed;
         ResetRun(GameState.Playing);
     }
 
-    private void StartRunFromHud()
+    public void StartLevelForTests(int levelNumber, int seed)
     {
+        activeLevelIndex = Mathf.Clamp(levelNumber - 1, 0, RunnerLevelCatalog.Levels.Count - 1);
+        checkpointIndex = 0;
+        nextRunSeed = seed;
         ResetRun(GameState.Playing);
+    }
+
+    private void HandlePrimaryAction()
+    {
+        if (state == GameState.StartScreen || state == GameState.CampaignComplete)
+        {
+            BeginCampaign();
+        }
+        else if (state == GameState.GameOver)
+        {
+            RestartLevelFromCheckpoint();
+        }
+        else if (state == GameState.LevelComplete)
+        {
+            activeLevelIndex++;
+            ResetRun(GameState.Playing);
+        }
+    }
+
+    private void BeginCampaign()
+    {
+        activeLevelIndex = 0;
+        ResetRun(GameState.Playing);
+    }
+
+    public void TakeHitForTests()
+    {
+        if (state == GameState.Playing)
+        {
+            HandleHit();
+        }
+    }
+
+    public void CheckObstacleHitsForTests()
+    {
+        if (state == GameState.Playing)
+        {
+            CheckObstacleHits();
+        }
     }
 
     public void PauseForTests()
@@ -251,7 +330,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         if (state == GameState.Playing)
         {
-            EndRun();
+            FailLevel();
         }
     }
 
@@ -266,8 +345,14 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         position.z += meters;
         player.transform.position = position;
         distance = Mathf.Max(distance, position.z);
-        currentSpeed = RunnerPatternCatalog.MaximumRunnerSpeed;
+        furthestDistance = Mathf.Max(furthestDistance, distance);
+        currentSpeed = ActiveLevel.MaximumSpeed;
+        UpdateCheckpoint();
         UpdateMusicIntensity();
+        if (TryCompleteLevel())
+        {
+            return;
+        }
         GenerateWorldAhead();
         CleanupWorldBehind();
     }
@@ -285,7 +370,11 @@ public sealed class EndlessRunnerGame : MonoBehaviour
                 ? RunnerHudMode.Playing
                 : state == GameState.Paused
                     ? RunnerHudMode.Paused
-                    : RunnerHudMode.GameOver;
+                    : state == GameState.LevelComplete
+                        ? RunnerHudMode.LevelComplete
+                        : state == GameState.CampaignComplete
+                            ? RunnerHudMode.CampaignComplete
+                            : RunnerHudMode.GameOver;
 
         string hintSymbol = null;
         float hintAlpha = 0f;
@@ -315,7 +404,13 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             Mathf.Clamp01(actionFeedbackTimer * 2f),
             hintSymbol,
             hintAlpha,
-            Application.isMobilePlatform));
+            Application.isMobilePlatform,
+            ActiveLevel.Number,
+            RunnerLevelCatalog.Levels.Count,
+            Mathf.FloorToInt(ActiveLevel.TargetDistance),
+            remainingLives,
+            RunnerLevelCatalog.LivesPerLevel,
+            checkpointIndex));
     }
 
     private void CreateMaterials()
@@ -447,6 +542,49 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         RenderSettings.skybox = skyboxMaterial;
     }
 
+    private void ApplyLevelPresentation()
+    {
+        if (skyboxMaterial == null || sun == null)
+        {
+            return;
+        }
+
+        if (ActiveLevel.Mood == RunnerLevelMood.GoldenSunset)
+        {
+            skyboxMaterial.SetColor("_SkyTint", new Color(0.58f, 0.31f, 0.2f));
+            RenderSettings.fogColor = new Color(0.48f, 0.28f, 0.23f);
+            RenderSettings.fogStartDistance = 72f;
+            RenderSettings.fogEndDistance = 205f;
+            RenderSettings.ambientSkyColor = new Color(0.68f, 0.44f, 0.34f);
+            RenderSettings.ambientEquatorColor = new Color(0.46f, 0.29f, 0.25f);
+            sun.color = new Color(1f, 0.61f, 0.36f);
+            sun.intensity = 1.18f;
+            return;
+        }
+
+        if (ActiveLevel.Mood == RunnerLevelMood.VioletNight)
+        {
+            skyboxMaterial.SetColor("_SkyTint", new Color(0.31f, 0.27f, 0.56f));
+            RenderSettings.fogColor = new Color(0.28f, 0.27f, 0.47f);
+            RenderSettings.fogStartDistance = 96f;
+            RenderSettings.fogEndDistance = 260f;
+            RenderSettings.ambientSkyColor = new Color(0.45f, 0.43f, 0.7f);
+            RenderSettings.ambientEquatorColor = new Color(0.32f, 0.31f, 0.52f);
+            sun.color = new Color(0.78f, 0.72f, 1f);
+            sun.intensity = 1.16f;
+            return;
+        }
+
+        skyboxMaterial.SetColor("_SkyTint", new Color(0.25f, 0.42f, 0.58f));
+        RenderSettings.fogColor = new Color(0.27f, 0.36f, 0.46f);
+        RenderSettings.fogStartDistance = 72f;
+        RenderSettings.fogEndDistance = 205f;
+        RenderSettings.ambientSkyColor = new Color(0.48f, 0.57f, 0.68f);
+        RenderSettings.ambientEquatorColor = new Color(0.3f, 0.36f, 0.43f);
+        sun.color = new Color(1f, 0.76f, 0.58f);
+        sun.intensity = 1.42f;
+    }
+
     private void CreatePlayer()
     {
         player = new GameObject("Runner");
@@ -521,7 +659,11 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         RestoreGlobalPauseState();
         state = nextState;
         distance = 0f;
-        currentSpeed = StartingSpeed;
+        furthestDistance = 0f;
+        obstacleGenerationMinimumZ = float.NegativeInfinity;
+        remainingLives = RunnerLevelCatalog.LivesPerLevel;
+        checkpointIndex = 0;
+        currentSpeed = ActiveLevel.StartingSpeed;
         nextSegmentIndex = -1;
         nextPatternZ = RunnerRunTuning.FirstRandomPatternZ;
         actionClearCount = 0;
@@ -537,9 +679,9 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         slideHintShown = false;
         tutorialGenerated = false;
 
-        int seed = nextRunSeed ?? unchecked(Environment.TickCount ^ DateTime.UtcNow.Millisecond * 397);
+        activeRunSeed = nextRunSeed ?? ActiveLevel.Seed;
         nextRunSeed = null;
-        patternSequence = new RunnerPatternSequence(seed);
+        patternSequence = new RunnerPatternSequence(activeRunSeed);
         combo.Reset();
 
         runnerMotor.ResetForRun();
@@ -548,6 +690,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         playerMaterial.color = RunnerColor;
         actionParticles.Clear();
 
+        ApplyLevelPresentation();
         ClearWorld();
         GenerateWorldAhead();
         music.SetState(nextState == GameState.Playing
@@ -556,11 +699,55 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         UpdateCamera(true);
     }
 
+    private void RestartLevelFromCheckpoint()
+    {
+        int restartCheckpoint = checkpointIndex;
+        ResetRun(GameState.Playing);
+        RestoreCheckpoint(restartCheckpoint, false);
+    }
+
+    private void RestoreCheckpoint(int targetCheckpoint, bool preserveFurthestDistance)
+    {
+        float previousFurthestDistance = furthestDistance;
+        checkpointIndex = Mathf.Clamp(targetCheckpoint, 0, RunnerLevelCatalog.CheckpointCount);
+        distance = ActiveLevel.CheckpointDistance(checkpointIndex);
+        furthestDistance = preserveFurthestDistance
+            ? Mathf.Max(previousFurthestDistance, distance)
+            : distance;
+        currentSpeed = ActiveLevel.SpeedAtDistance(distance);
+        nextSegmentIndex = -1;
+        nextPatternZ = RunnerRunTuning.FirstRandomPatternZ;
+        tutorialGenerated = false;
+        patternSequence = new RunnerPatternSequence(activeRunSeed);
+        obstacleGenerationMinimumZ = distance + CheckpointRecoverySafeDistance;
+        SkipPatternsBeforeRecoveryBuffer();
+        runnerMotor.ResetForRun();
+        runnerVisualRig.ResetForRun();
+        runnerMotionEffects.ResetForRun();
+        player.transform.position = new Vector3(0f, 0f, distance);
+        playerMaterial.color = RunnerColor;
+        playerVisualRoot.transform.localRotation = Quaternion.identity;
+        actionParticles.Clear();
+        ClearWorld();
+        GenerateWorldAhead();
+        CleanupWorldBehind();
+        UpdateCamera(true);
+    }
+
+    private void SkipPatternsBeforeRecoveryBuffer()
+    {
+        while (nextPatternZ < obstacleGenerationMinimumZ)
+        {
+            RunnerPatternDefinition pattern = patternSequence.Next(ActiveLevel.TierForDistance(nextPatternZ));
+            nextPatternZ += pattern.Length + patternSequence.NextSpacing();
+        }
+    }
+
     private void AdvanceRunner()
     {
         currentSpeed = Mathf.Min(
-            RunnerPatternCatalog.MaximumRunnerSpeed,
-            currentSpeed + Time.deltaTime * RunnerRunTuning.SpeedAcceleration);
+            ActiveLevel.MaximumSpeed,
+            currentSpeed + Time.deltaTime * ActiveLevel.SpeedAcceleration);
 
         runnerMotor.Tick(currentSpeed);
         runnerVisualRig.Tick(currentSpeed, true, Time.deltaTime);
@@ -603,6 +790,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         }
 
         distance = Mathf.Max(distance, player.transform.position.z);
+        furthestDistance = Mathf.Max(furthestDistance, distance);
+        UpdateCheckpoint();
         UpdateMusicIntensity();
     }
 
@@ -611,6 +800,31 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         music.SetState(distance >= RunnerRunTuning.AdvancedTierDistance
             ? RunnerMusicState.RunningHigh
             : RunnerMusicState.RunningLow);
+    }
+
+    private void UpdateCheckpoint()
+    {
+        while (checkpointIndex < RunnerLevelCatalog.CheckpointCount &&
+               distance >= ActiveLevel.CheckpointDistance(checkpointIndex + 1))
+        {
+            checkpointIndex++;
+            actionFeedbackPoints = RunnerScore.ActionClearPoints;
+            actionFeedbackTimer = 0.72f;
+            actionParticles.transform.position = player.transform.position + new Vector3(0f, 1f, 0f);
+            actionParticles.Emit(18);
+            soundEffects.PlayClear(1);
+        }
+    }
+
+    private bool TryCompleteLevel()
+    {
+        if (distance < ActiveLevel.TargetDistance)
+        {
+            return false;
+        }
+
+        CompleteLevel();
+        return true;
     }
 
     private void AnimateIdlePlayer()
@@ -656,9 +870,12 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             tutorialGenerated = true;
         }
 
-        while (nextPatternZ < playerZ + LookAheadDistance)
+        float generationLimit = Mathf.Min(
+            playerZ + LookAheadDistance,
+            ActiveLevel.TargetDistance + FinishVisualObstacleDistance);
+        while (nextPatternZ < generationLimit)
         {
-            int tier = RunnerRunTuning.TierForDistance(distance);
+            int tier = ActiveLevel.TierForDistance(nextPatternZ);
             RunnerPatternDefinition pattern = patternSequence.Next(tier);
             CreatePattern(pattern, nextPatternZ);
             nextPatternZ += pattern.Length + patternSequence.NextSpacing();
@@ -676,6 +893,12 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     private void CreateObstacleMask(RunnerObstacleKind kind, int laneMask, float z)
     {
+        if (z > ActiveLevel.TargetDistance + FinishVisualObstacleDistance ||
+            z < obstacleGenerationMinimumZ)
+        {
+            return;
+        }
+
         for (int lane = 0; lane < 3; lane++)
         {
             if ((laneMask & (1 << lane)) != 0)
@@ -1070,7 +1293,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
                 if (collision)
                 {
-                    EndRun();
+                    HandleHit();
                     return;
                 }
 
@@ -1109,16 +1332,47 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         music.TriggerDuck();
     }
 
-    private void EndRun()
+    private void HandleHit()
+    {
+        remainingLives--;
+        combo.ClearActiveCombo();
+        actionHintTimer = 0f;
+        actionFeedbackTimer = 0f;
+        playerMaterial.color = CrashColor;
+        playerVisualRoot.transform.localRotation = Quaternion.Euler(72f, 0f, 18f);
+        cameraRig.TriggerImpact(0.24f, 2f);
+        soundEffects.PlayCrash();
+        music.TriggerDuck();
+
+        if (remainingLives <= 0)
+        {
+            FailLevel();
+            return;
+        }
+
+        RestoreCheckpoint(checkpointIndex, true);
+    }
+
+    private void CompleteLevel()
+    {
+        RecordBestRun();
+        bool completedCampaign = activeLevelIndex >= RunnerLevelCatalog.Levels.Count - 1;
+        state = completedCampaign ? GameState.CampaignComplete : GameState.LevelComplete;
+        playerMaterial.color = RunnerColor;
+        playerVisualRoot.transform.localRotation = Quaternion.identity;
+        actionParticles.transform.position = player.transform.position + new Vector3(0f, 1.1f, 0f);
+        actionParticles.Emit(completedCampaign ? 72 : 48);
+        cameraRig.PulseFieldOfView(completedCampaign ? 2.4f : 1.6f);
+        cameraRig.TriggerImpact(0.12f, 0.8f);
+        soundEffects.PlayClear(RunnerComboTracker.MaximumMultiplier);
+        music.SetState(RunnerMusicState.Menu);
+        music.TriggerDuck();
+    }
+
+    private void FailLevel()
     {
         state = GameState.GameOver;
-        highScore = Mathf.Max(highScore, distance);
-        bestScore = Mathf.Max(bestScore, CurrentScore);
-        bestCombo = Mathf.Max(bestCombo, combo.HighestCombo);
-        PlayerPrefs.SetFloat(BestDistanceKey, highScore);
-        PlayerPrefs.SetInt(BestScoreKey, bestScore);
-        PlayerPrefs.SetInt(BestComboKey, bestCombo);
-        PlayerPrefs.Save();
+        RecordBestRun();
 
         playerMaterial.color = CrashColor;
         playerVisualRoot.transform.localRotation = Quaternion.Euler(72f, 0f, 18f);
@@ -1126,6 +1380,18 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         soundEffects.PlayCrash();
         music.SetState(RunnerMusicState.GameOver);
         music.TriggerDuck();
+    }
+
+    private void RecordBestRun()
+    {
+        highScore = Mathf.Max(highScore, furthestDistance);
+        bestScore = Mathf.Max(bestScore, CurrentScore);
+        bestCombo = Mathf.Max(bestCombo, combo.HighestCombo);
+        PlayerPrefs.SetFloat(BestDistanceKey, highScore);
+        PlayerPrefs.SetInt(BestScoreKey, bestScore);
+        PlayerPrefs.SetInt(BestComboKey, bestCombo);
+        PlayerPrefs.Save();
+
     }
 
     private void PauseRun()

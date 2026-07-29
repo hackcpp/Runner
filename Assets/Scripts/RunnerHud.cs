@@ -8,7 +8,9 @@ public enum RunnerHudMode
     Start,
     Playing,
     Paused,
-    GameOver
+    GameOver,
+    LevelComplete,
+    CampaignComplete
 }
 
 public readonly struct RunnerHudViewModel
@@ -27,6 +29,49 @@ public readonly struct RunnerHudViewModel
         string hintSymbol,
         float hintAlpha,
         bool touchControls)
+        : this(
+            mode,
+            score,
+            distance,
+            bestScore,
+            actionCount,
+            runBestCombo,
+            comboMultiplier,
+            comboAmount,
+            feedbackPoints,
+            feedbackAlpha,
+            hintSymbol,
+            hintAlpha,
+            touchControls,
+            1,
+            3,
+            0,
+            RunnerLevelCatalog.LivesPerLevel,
+            RunnerLevelCatalog.LivesPerLevel,
+            0)
+    {
+    }
+
+    public RunnerHudViewModel(
+        RunnerHudMode mode,
+        int score,
+        int distance,
+        int bestScore,
+        int actionCount,
+        int runBestCombo,
+        int comboMultiplier,
+        float comboAmount,
+        int feedbackPoints,
+        float feedbackAlpha,
+        string hintSymbol,
+        float hintAlpha,
+        bool touchControls,
+        int levelNumber,
+        int levelCount,
+        int targetDistance,
+        int lives,
+        int maximumLives,
+        int checkpointNumber)
     {
         Mode = mode;
         Score = score;
@@ -41,6 +86,12 @@ public readonly struct RunnerHudViewModel
         HintSymbol = hintSymbol;
         HintAlpha = hintAlpha;
         TouchControls = touchControls;
+        LevelNumber = levelNumber;
+        LevelCount = levelCount;
+        TargetDistance = targetDistance;
+        Lives = lives;
+        MaximumLives = maximumLives;
+        CheckpointNumber = checkpointNumber;
     }
 
     public RunnerHudMode Mode { get; }
@@ -56,6 +107,12 @@ public readonly struct RunnerHudViewModel
     public string HintSymbol { get; }
     public float HintAlpha { get; }
     public bool TouchControls { get; }
+    public int LevelNumber { get; }
+    public int LevelCount { get; }
+    public int TargetDistance { get; }
+    public int Lives { get; }
+    public int MaximumLives { get; }
+    public int CheckpointNumber { get; }
 }
 
 public sealed class RunnerHud : MonoBehaviour
@@ -92,6 +149,8 @@ public sealed class RunnerHud : MonoBehaviour
     private Text scoreText;
     private Text distanceText;
     private Text bestText;
+    private Text levelText;
+    private Text livesText;
     private Text comboText;
     private Text feedbackText;
     private Text hintText;
@@ -156,9 +215,14 @@ public sealed class RunnerHud : MonoBehaviour
         if (playing)
         {
             scoreText.text = "SCORE  " + model.Score;
-            distanceText.text = "DISTANCE  " + model.Distance + " m";
+            distanceText.text = "PROGRESS  " + model.Distance + " / " + model.TargetDistance + " m";
             bestText.text = "BEST  " + model.BestScore;
+            levelText.text = "LEVEL  " + model.LevelNumber + " / " + model.LevelCount;
+            livesText.text = "LIVES  " + model.Lives + " / " + model.MaximumLives;
         }
+
+        levelText.gameObject.SetActive(playing);
+        livesText.gameObject.SetActive(playing);
 
         bool showCombo = playing && model.ComboAmount > 0f;
         comboText.gameObject.SetActive(showCombo);
@@ -296,6 +360,28 @@ public sealed class RunnerHud : MonoBehaviour
             TextAnchor.MiddleLeft,
             FontStyle.Normal,
             SecondaryText);
+        levelText = CreateText(
+            gameplaySafeArea,
+            "Level",
+            new Vector2(1f, 1f),
+            new Vector2(1f, 1f),
+            new Vector2(-98f, -22f),
+            new Vector2(250f, 32f),
+            19,
+            TextAnchor.MiddleRight,
+            FontStyle.Bold,
+            PrimaryText);
+        livesText = CreateText(
+            gameplaySafeArea,
+            "Lives",
+            new Vector2(1f, 1f),
+            new Vector2(1f, 1f),
+            new Vector2(-98f, -54f),
+            new Vector2(250f, 32f),
+            19,
+            TextAnchor.MiddleRight,
+            FontStyle.Bold,
+            Reward);
 
         comboText = CreateText(
             gameplaySafeArea,
@@ -428,7 +514,7 @@ public sealed class RunnerHud : MonoBehaviour
         {
             panelTitle.text = "ROOFTOP RUNNER";
             panelScore.text = "BEST  " + model.BestScore;
-            panelDetails.text = string.Empty;
+            panelDetails.text = "3 LEVELS  -  3 LIVES EACH";
             primaryButtonLabel.text = "START RUN";
             return;
         }
@@ -442,11 +528,30 @@ public sealed class RunnerHud : MonoBehaviour
             return;
         }
 
-        panelTitle.text = "RUN ENDED";
+        if (model.Mode == RunnerHudMode.LevelComplete)
+        {
+            panelTitle.text = "LEVEL " + model.LevelNumber + " CLEAR";
+            panelScore.text = "SCORE  " + model.Score;
+            panelDetails.text = "CHECKPOINTS SECURED  " + model.CheckpointNumber + " / " + RunnerLevelCatalog.CheckpointCount;
+            primaryButtonLabel.text = "NEXT LEVEL";
+            return;
+        }
+
+        if (model.Mode == RunnerHudMode.CampaignComplete)
+        {
+            panelTitle.text = "ROOFTOP COMPLETE";
+            panelScore.text = "FINAL SCORE  " + model.Score;
+            panelDetails.text = "ALL " + model.LevelCount + " LEVELS CLEARED";
+            primaryButtonLabel.text = "PLAY AGAIN";
+            return;
+        }
+
+        panelTitle.text = "LEVEL " + model.LevelNumber + " FAILED";
         panelScore.text = "SCORE  " + model.Score;
-        panelDetails.text = "DISTANCE  " + model.Distance + " m    ACTIONS  " + model.ActionCount +
+        panelDetails.text = "CHECKPOINT  " + model.CheckpointNumber + " / " + RunnerLevelCatalog.CheckpointCount +
+                            "    ACTIONS  " + model.ActionCount +
                             "\nBEST COMBO  x" + model.RunBestCombo;
-        primaryButtonLabel.text = "RESTART";
+        primaryButtonLabel.text = "TRY AGAIN";
     }
 
     private void BuildGestureGuide()
@@ -597,7 +702,9 @@ public sealed class RunnerHud : MonoBehaviour
         {
             resumeAction?.Invoke();
         }
-        else if (currentMode == RunnerHudMode.GameOver)
+        else if (currentMode == RunnerHudMode.GameOver ||
+                 currentMode == RunnerHudMode.LevelComplete ||
+                 currentMode == RunnerHudMode.CampaignComplete)
         {
             restartAction?.Invoke();
         }

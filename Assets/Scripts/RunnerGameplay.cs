@@ -22,6 +22,13 @@ public enum RunnerRequiredAction
     Slide
 }
 
+public enum RunnerLevelMood
+{
+    BlueDusk,
+    GoldenSunset,
+    VioletNight
+}
+
 public static class RunnerObstacleRules
 {
     public const float HurdleClearanceHeight = 0.82f;
@@ -121,6 +128,109 @@ public sealed class RunnerComboTracker
         TotalBonusScore = 0;
         RemainingTime = 0f;
     }
+
+    public void ClearActiveCombo()
+    {
+        ComboCount = 0;
+        RemainingTime = 0f;
+    }
+}
+
+public sealed class RunnerLevelDefinition
+{
+    public RunnerLevelDefinition(
+        int number,
+        string name,
+        float targetDistance,
+        int maximumTier,
+        int seed,
+        RunnerLevelMood mood,
+        float startingSpeed,
+        float speedAcceleration,
+        float maximumSpeed)
+    {
+        Number = number;
+        Name = name;
+        TargetDistance = targetDistance;
+        MaximumTier = maximumTier;
+        Seed = seed;
+        Mood = mood;
+        StartingSpeed = startingSpeed;
+        SpeedAcceleration = speedAcceleration;
+        MaximumSpeed = maximumSpeed;
+    }
+
+    public int Number { get; }
+    public string Name { get; }
+    public float TargetDistance { get; }
+    public int MaximumTier { get; }
+    public int Seed { get; }
+    public RunnerLevelMood Mood { get; }
+    public float StartingSpeed { get; }
+    public float SpeedAcceleration { get; }
+    public float MaximumSpeed { get; }
+
+    public float SpeedAtDistance(float distance)
+    {
+        double speedSquared = StartingSpeed * StartingSpeed +
+                              2d * SpeedAcceleration * Math.Max(0f, distance);
+        return (float)Math.Min(MaximumSpeed, Math.Sqrt(speedSquared));
+    }
+
+    public float TimeAtDistance(float distance)
+    {
+        double nonNegativeDistance = Math.Max(0f, distance);
+        double timeToMaximumSpeed = (MaximumSpeed - StartingSpeed) / SpeedAcceleration;
+        double distanceToMaximumSpeed =
+            (MaximumSpeed * MaximumSpeed - StartingSpeed * StartingSpeed) /
+            (2d * SpeedAcceleration);
+
+        if (nonNegativeDistance <= distanceToMaximumSpeed)
+        {
+            return (float)((Math.Sqrt(
+                StartingSpeed * StartingSpeed +
+                2d * SpeedAcceleration * nonNegativeDistance) - StartingSpeed) /
+                SpeedAcceleration);
+        }
+
+        return (float)(timeToMaximumSpeed +
+                       (nonNegativeDistance - distanceToMaximumSpeed) / MaximumSpeed);
+    }
+
+    public float CheckpointDistance(int checkpointIndex)
+    {
+        if (checkpointIndex <= 0)
+        {
+            return 0f;
+        }
+
+        if (checkpointIndex == 1)
+        {
+            return TargetDistance / 3f;
+        }
+
+        return TargetDistance * 2f / 3f;
+    }
+
+    public int TierForDistance(float distance)
+    {
+        return Math.Min(MaximumTier, RunnerRunTuning.TierForDistance(distance));
+    }
+}
+
+public static class RunnerLevelCatalog
+{
+    public const int LivesPerLevel = 3;
+    public const int CheckpointCount = 2;
+
+    private static readonly RunnerLevelDefinition[] Definitions =
+    {
+        new RunnerLevelDefinition(1, "ROOFTOP BASICS", 280f, 0, 17031, RunnerLevelMood.BlueDusk, 9.4f, 0.12f, 12.5f),
+        new RunnerLevelDefinition(2, "CITY RHYTHM", 420f, 1, 27059, RunnerLevelMood.GoldenSunset, 10.4f, 0.16f, 14.5f),
+        new RunnerLevelDefinition(3, "SUNSET SPRINT", 600f, 2, 37087, RunnerLevelMood.VioletNight, 11.4f, 0.2f, 16.5f)
+    };
+
+    public static IReadOnlyList<RunnerLevelDefinition> Levels => Definitions;
 }
 
 public readonly struct RunnerPatternElement

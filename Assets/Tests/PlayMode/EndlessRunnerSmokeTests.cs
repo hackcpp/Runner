@@ -145,7 +145,7 @@ public sealed class EndlessRunnerSmokeTests
 
         for (int runIndex = 0; runIndex < 3; runIndex++)
         {
-            game.StartRunForTests(9000 + runIndex);
+            game.StartLevelForTests(3, 9000 + runIndex);
         }
 
         float remainingDistance = RunnerRunTuning.AdvancedTierDistance + 1f;
@@ -576,7 +576,7 @@ public sealed class EndlessRunnerSmokeTests
             null,
             0f,
             true));
-        Assert.AreEqual(string.Empty, GameObject.Find("Panel Details").GetComponent<Text>().text);
+        Assert.AreEqual("3 LEVELS  -  3 LIVES EACH", GameObject.Find("Panel Details").GetComponent<Text>().text);
         Assert.IsTrue(hud.GestureGuideRoot.gameObject.activeInHierarchy);
         Assert.IsTrue(exitButton.gameObject.activeInHierarchy, "The start overlay should expose exit.");
 
@@ -778,6 +778,85 @@ public sealed class EndlessRunnerSmokeTests
     }
 
     [Test]
+    public void LevelCatalogDefinesThreeFiniteVerifiedRuns()
+    {
+        Assert.AreEqual(3, RunnerLevelCatalog.Levels.Count);
+        Assert.AreEqual(3, RunnerLevelCatalog.LivesPerLevel);
+        Assert.AreEqual(2, RunnerLevelCatalog.CheckpointCount);
+
+        float previousStartingSpeed = 0f;
+        float previousMaximumSpeed = 0f;
+
+        for (int index = 0; index < RunnerLevelCatalog.Levels.Count; index++)
+        {
+            RunnerLevelDefinition level = RunnerLevelCatalog.Levels[index];
+            RunnerRunSimulationResult result = RunnerRunSimulator.Simulate(level);
+
+            Assert.AreEqual(index + 1, level.Number);
+            Assert.Greater(level.TargetDistance, RunnerRunTuning.TutorialSlideZ);
+            Assert.AreEqual(level.TargetDistance / 3f, level.CheckpointDistance(1), 0.001f);
+            Assert.AreEqual(level.TargetDistance * 2f / 3f, level.CheckpointDistance(2), 0.001f);
+            Assert.Greater(level.StartingSpeed, previousStartingSpeed);
+            Assert.Greater(level.MaximumSpeed, previousMaximumSpeed);
+            Assert.IsTrue(result.IsSurvivable, "Level " + level.Number + " must remain survivable.");
+            previousStartingSpeed = level.StartingSpeed;
+            previousMaximumSpeed = level.MaximumSpeed;
+        }
+    }
+
+    [UnityTest]
+    public IEnumerator LevelsAbsorbHitsAndAdvanceAfterCompletion()
+    {
+        yield return null;
+        yield return null;
+
+        EndlessRunnerGame game = Object.FindObjectOfType<EndlessRunnerGame>();
+        game.StartRunForTests(17031);
+        yield return null;
+
+        Assert.AreEqual(1, game.ActiveLevelNumber);
+        Assert.AreEqual(RunnerLevelCatalog.LivesPerLevel, game.RemainingLives);
+
+        game.AdvanceWorldForTests(game.LevelTargetDistance * 0.4f);
+        Assert.AreEqual(1, game.CheckpointIndex);
+        float checkpointDistance = RunnerLevelCatalog.Levels[0].CheckpointDistance(1);
+
+        game.TakeHitForTests();
+        Assert.IsTrue(game.IsPlaying, "The first hit must not end the level.");
+        Assert.AreEqual(2, game.RemainingLives);
+        Assert.AreEqual(checkpointDistance, game.Distance, 0.001f);
+
+        game.AdvanceWorldForTests(game.RecoverySafetyDistance - 0.5f);
+        game.CheckObstacleHitsForTests();
+        Assert.IsTrue(game.IsPlaying, "Checkpoint recovery must leave time to react before the next obstacle.");
+        Assert.AreEqual(2, game.RemainingLives);
+
+        game.TakeHitForTests();
+        Assert.IsTrue(game.IsPlaying, "The second hit must not end the level.");
+        Assert.AreEqual(1, game.RemainingLives);
+
+        game.TakeHitForTests();
+        Assert.IsFalse(game.IsPlaying, "The third hit should fail the current level.");
+        yield return null;
+        Assert.IsTrue(game.Hud.ExitButton.gameObject.activeInHierarchy);
+
+        game.Hud.PrimaryButton.onClick.Invoke();
+        yield return null;
+        Assert.IsTrue(game.IsPlaying);
+        Assert.AreEqual(RunnerLevelCatalog.LivesPerLevel, game.RemainingLives);
+        Assert.GreaterOrEqual(game.Distance, checkpointDistance);
+        Assert.Less(game.Distance, checkpointDistance + 1f);
+
+        game.AdvanceWorldForTests(game.LevelTargetDistance);
+        Assert.IsTrue(game.IsLevelComplete, "Reaching the finite target should celebrate a level clear.");
+        yield return null;
+        game.Hud.PrimaryButton.onClick.Invoke();
+        yield return null;
+        Assert.IsTrue(game.IsPlaying);
+        Assert.AreEqual(2, game.ActiveLevelNumber);
+    }
+
+    [Test]
     public void PatternCatalogIsValidAndContainsEnoughVariety()
     {
         Assert.GreaterOrEqual(RunnerPatternCatalog.Patterns.Count, 8);
@@ -921,15 +1000,12 @@ public sealed class EndlessRunnerSmokeTests
     }
 
     [UnityTest]
-    public IEnumerator WorldPoolRemainsBoundedAcrossTenMinuteSimulation()
+    public IEnumerator WorldPoolRemainsBoundedAcrossRepeatedLevels()
     {
         yield return null;
         yield return null;
 
         EndlessRunnerGame game = Object.FindObjectOfType<EndlessRunnerGame>();
-        game.StartRunForTests(20260725);
-        yield return null;
-
         AudioSource[] initialAudioSources = game.GetComponents<AudioSource>();
         AudioClip[] initialMusicClips = new AudioClip[ProceduralRunnerMusic.LayerCount];
         for (int layerIndex = 0; layerIndex < initialMusicClips.Length; layerIndex++)
@@ -937,25 +1013,31 @@ public sealed class EndlessRunnerSmokeTests
             initialMusicClips[layerIndex] = game.Music.GetClip(layerIndex);
         }
 
-        int simulationSteps = Mathf.CeilToInt(
-            RunnerPatternCatalog.MaximumRunnerSpeed * 600f / 14f);
         int warmCreatedCubeCount = 0;
 
-        for (int step = 0; step < simulationSteps; step++)
+        for (int runIndex = 0; runIndex < 12; runIndex++)
         {
-            game.AdvanceWorldForTests(14f);
-            if (step == 200)
+            game.StartLevelForTests(3, 20260725 + runIndex);
+            float remainingDistance = game.LevelTargetDistance - 14f;
+            while (remainingDistance > 0f)
+            {
+                float stepDistance = Mathf.Min(14f, remainingDistance);
+                game.AdvanceWorldForTests(stepDistance);
+                remainingDistance -= stepDistance;
+            }
+
+            if (runIndex == 4)
             {
                 warmCreatedCubeCount = game.TotalCreatedCubeCount;
             }
         }
 
-        Assert.Greater(game.Distance, 9800f);
-        Assert.Greater(game.PooledCubeCount, 0, "Long runs should recycle geometry behind the player.");
-        Assert.Greater(game.PooledObstacleRootCount, 0, "Obstacle roots should be recycled.");
+        Assert.Greater(game.Distance, RunnerRunTuning.AdvancedTierDistance);
+        Assert.Greater(game.PooledCubeCount, 0, "Repeated levels should recycle geometry behind the runner.");
+        Assert.Greater(game.PooledObstacleRootCount, 0, "Repeated levels should recycle obstacle roots.");
         Assert.Less(game.ActiveWorldCubeCount, 380, "Active geometry should stay bounded by the look-ahead window.");
         Assert.Less(game.ActiveObstacleCount, 60, "Active obstacles should stay bounded by the look-ahead window.");
-        Assert.Less(game.TotalCreatedCubeCount, 460, "Pooling should cap total runtime cube creation.");
+        Assert.Less(game.TotalCreatedCubeCount, 620, "Pooling should cap total runtime cube creation.");
         Assert.LessOrEqual(
             game.TotalCreatedCubeCount - warmCreatedCubeCount,
             50,

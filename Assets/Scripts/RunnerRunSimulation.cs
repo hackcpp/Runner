@@ -138,6 +138,23 @@ public static class RunnerSurvivalSolver
         out IReadOnlyList<int> lanePath,
         out float failureZ)
     {
+        return TryFindPathUsingRunTiming(
+            rows,
+            initialLane,
+            initialZ,
+            RunnerRunTuning.TimeAtDistance,
+            out lanePath,
+            out failureZ);
+    }
+
+    internal static bool TryFindPathUsingRunTiming(
+        IReadOnlyList<RunnerObstacleRow> rows,
+        int initialLane,
+        float initialZ,
+        Func<float, float> timeAtDistance,
+        out IReadOnlyList<int> lanePath,
+        out float failureZ)
+    {
         if (initialLane < 0 || initialLane > 2)
         {
             lanePath = Array.Empty<int>();
@@ -154,7 +171,7 @@ public static class RunnerSurvivalSolver
             rows,
             candidates,
             initialZ,
-            RunnerRunTuning.TimeAtDistance,
+            timeAtDistance,
             out lanePath,
             out failureZ);
     }
@@ -453,6 +470,30 @@ public static class RunnerRunSimulator
 
     public static RunnerRunSimulationResult Simulate(int seed, float targetDistance)
     {
+        return Simulate(seed, targetDistance, 2);
+    }
+
+    public static RunnerRunSimulationResult Simulate(RunnerLevelDefinition level)
+    {
+        if (level == null)
+        {
+            throw new ArgumentNullException(nameof(level));
+        }
+
+        return Simulate(level.Seed, level.TargetDistance, level.MaximumTier, level.TimeAtDistance);
+    }
+
+    private static RunnerRunSimulationResult Simulate(int seed, float targetDistance, int maximumTier)
+    {
+        return Simulate(seed, targetDistance, maximumTier, RunnerRunTuning.TimeAtDistance);
+    }
+
+    private static RunnerRunSimulationResult Simulate(
+        int seed,
+        float targetDistance,
+        int maximumTier,
+        Func<float, float> timeAtDistance)
+    {
         if (targetDistance < 0f || float.IsNaN(targetDistance) || float.IsInfinity(targetDistance))
         {
             throw new ArgumentOutOfRangeException(nameof(targetDistance));
@@ -471,7 +512,7 @@ public static class RunnerRunSimulator
         while (nextPatternZ <= targetDistance + 0.001f)
         {
             float generationDistance = RunnerRunTuning.GenerationDistanceForPattern(nextPatternZ);
-            int tier = RunnerRunTuning.TierForDistance(generationDistance);
+            int tier = Math.Min(maximumTier, RunnerRunTuning.TierForDistance(generationDistance));
             RunnerPatternDefinition pattern = sequence.Next(tier);
             tierPatternCounts[tier]++;
             patternIds.Add(pattern.Id);
@@ -495,6 +536,7 @@ public static class RunnerRunSimulator
             rows,
             CenterLane,
             0f,
+            timeAtDistance,
             out lanePath,
             out failureZ);
 
@@ -504,7 +546,8 @@ public static class RunnerRunSimulator
             rows,
             lanePath,
             out minimumActionInterval,
-            out minimumLaneChangeTimeMargin);
+            out minimumLaneChangeTimeMargin,
+            timeAtDistance);
 
         return new RunnerRunSimulationResult(
             seed,
@@ -682,7 +725,8 @@ public static class RunnerRunSimulator
         IReadOnlyList<RunnerObstacleRow> rows,
         IReadOnlyList<int> lanePath,
         out float minimumActionInterval,
-        out float minimumLaneChangeTimeMargin)
+        out float minimumLaneChangeTimeMargin,
+        Func<float, float> timeAtDistance)
     {
         minimumActionInterval = float.PositiveInfinity;
         minimumLaneChangeTimeMargin = float.PositiveInfinity;
@@ -692,14 +736,14 @@ public static class RunnerRunSimulator
         }
 
         int previousLane = CenterLane;
-        float previousTime = RunnerRunTuning.TimeAtDistance(0f);
+        float previousTime = timeAtDistance(0f);
         float previousRequiredActionTime = float.NegativeInfinity;
 
         for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
         {
             RunnerObstacleRow row = rows[rowIndex];
             int lane = lanePath[rowIndex];
-            float rowTime = RunnerRunTuning.TimeAtDistance(row.Z);
+            float rowTime = timeAtDistance(row.Z);
             int laneDelta = Math.Abs(lane - previousLane);
             if (laneDelta > 0)
             {
