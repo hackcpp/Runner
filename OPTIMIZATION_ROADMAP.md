@@ -583,7 +583,7 @@
 | 2026-07-29 | 进行中 | TapTap 上架材料：命名文案、全新图标、3 张截图、18 秒视频、标题宣传图、上传指南和隐私草案 | PlayMode `23/23`；Release、签名、432 帧连续采集和素材规格检查通过；待 Android 对照、资质与正式发布 | `75d7927` |
 | 2026-07-29 | 已完成 | 隔离本地 `Distribution/`，并区分构建图标、作品集截图和 TapTap 上传导出件 | Git 忽略与零跟踪文件、旧路径零引用、媒体 SHA-256 和 `git diff --check` 通过 | `75d7927` |
 | 2026-07-29 | 已完成 | 使用用户提供的新母版统一构建图标与 TapTap 上传图标，固化同画稿规则 | 两端 PNG 内容一致；macOS Universal、签名、打包图标与 Android launcher icon、APK v2 校验通过 | `75d7927` |
-| 2026-07-29 | 已完成 | 收敛为日常 Mac Debug、正式 Android Release，并完成 Android 项目独立证书签名 | PlayMode `23/23`；Mac Debug、APK v2 正式签名、包信息与 Git 忽略校验通过 | — |
+| 2026-07-29 | 已完成 | 收敛为日常 Mac Debug、正式 Android Release，并完成 Android 项目独立证书签名 | PlayMode `23/23`；Mac Debug、APK v2 正式签名、包信息与 Git 忽略校验通过 | `e5afd10` |
 | 2026-07-29 | 待规划 | 记录 P7 画面品质与宣传图对齐，后续先做视觉标杆切片 | 当前不实施，不执行测试或构建 | — |
 
 ## 维护规则
