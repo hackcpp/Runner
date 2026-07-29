@@ -63,6 +63,7 @@
 - [x] 每关通关触发金色粒子、相机反馈、清晰的 `LEVEL CLEAR` 面板和下一关按钮；第三关显示 `ROOFTOP COMPLETE`。
 - [x] HUD 已增加关卡、进度、生命、检查点信息；PlayMode `25/25`、Mac Debug Universal Binary、严格签名和启动日志通过。
 - [x] 已在 Mac Debug 人工验收关卡 HUD、通关庆祝、检查点恢复、三关环境递进和第三关可读性。现有 `Portfolio/Screenshots/` 与本地 TapTap 素材不作替换，等下一轮有意更新屏幕时同步。
+- [x] 实现提交：`5cac865` (`Add finite level progression`)。
 
 ## 最近完成：Android 平台构建适配
 
