@@ -10,10 +10,9 @@ public sealed class RunnerMediaCapture : MonoBehaviour
 {
     private const string CaptureFlag = "-taptapCapture";
     private const string OutputArgument = "-captureOutput";
-    private const int CaptureSeed = 20260729;
+    private const int CaptureLevelNumber = 3;
     private const int FrameRate = 24;
     private const int CaptureFrameCount = FrameRate * 18;
-    private const float CapturePlanDistance = 240f;
     private const float LaneDecisionDistance = 7f;
     private const float JumpDecisionDistance = 4.2f;
     private const float SlideDecisionDistance = 3.8f;
@@ -29,13 +28,10 @@ public sealed class RunnerMediaCapture : MonoBehaviour
     private int nextRowIndex;
     private int actionRequestedRowIndex = -1;
     private int capturedFrameCount;
-    private int routeScreenshotFrame = -1;
-    private int jumpScreenshotFrame = -1;
-    private int slideScreenshotFrame = -1;
     private bool captureStarted;
-    private bool routeScreenshotCaptured;
-    private bool jumpScreenshotCaptured;
-    private bool slideScreenshotCaptured;
+    private bool levelScreenshotCaptured;
+    private bool checkpointScreenshotCaptured;
+    private bool clearScreenshotCaptured;
 
     public static void AttachIfRequested(GameObject host, EndlessRunnerGame runnerGame)
     {
@@ -92,9 +88,8 @@ public sealed class RunnerMediaCapture : MonoBehaviour
             yield return EndOfFrame;
         }
 
-        RunnerRunSimulationResult plan = RunnerRunSimulator.Simulate(
-            CaptureSeed,
-            CapturePlanDistance);
+        RunnerLevelDefinition captureLevel = RunnerLevelCatalog.Levels[CaptureLevelNumber - 1];
+        RunnerRunSimulationResult plan = RunnerRunSimulator.Simulate(captureLevel);
         if (!plan.IsSurvivable || plan.Rows.Count != plan.LanePath.Count)
         {
             WriteManifest("Capture plan was not survivable.");
@@ -104,7 +99,7 @@ public sealed class RunnerMediaCapture : MonoBehaviour
 
         rows = plan.Rows;
         lanePath = plan.LanePath;
-        game.StartRunForTests(CaptureSeed);
+        game.StartLevelForTests(CaptureLevelNumber, captureLevel.Seed);
         captureStarted = true;
 
         while (capturedFrameCount < CaptureFrameCount && game.IsPlaying)
@@ -121,12 +116,12 @@ public sealed class RunnerMediaCapture : MonoBehaviour
             yield return null;
         }
 
-        bool screenshotsExported = ExportStoreScreenshots();
+        yield return CaptureStoreScreenshots();
         string error = capturedFrameCount != CaptureFrameCount
             ? "The automated run ended before all frames were captured."
-            : screenshotsExported
+            : levelScreenshotCaptured && checkpointScreenshotCaptured && clearScreenshotCaptured
                 ? null
-                : "One or more selected screenshot frames were not written.";
+                : "One or more level screenshots were not written.";
         WriteManifest(error);
         Application.Quit(string.IsNullOrEmpty(error) ? 0 : 3);
     }
@@ -183,53 +178,30 @@ public sealed class RunnerMediaCapture : MonoBehaviour
             string.Format(CultureInfo.InvariantCulture, "frame-{0:D4}.png", capturedFrameCount));
         ScreenCapture.CaptureScreenshot(framePath);
 
-        float distance = game.Distance;
-        if (!routeScreenshotCaptured && distance >= 23f && distance <= 27f)
-        {
-            routeScreenshotFrame = capturedFrameCount;
-            routeScreenshotCaptured = true;
-        }
-
-        if (!jumpScreenshotCaptured &&
-            game.Motor.State == RunnerActionState.Airborne &&
-            distance >= 46f && distance <= 49f)
-        {
-            jumpScreenshotFrame = capturedFrameCount;
-            jumpScreenshotCaptured = true;
-        }
-
-        if (!slideScreenshotCaptured &&
-            game.Motor.State == RunnerActionState.Sliding &&
-            distance >= 68f && distance <= 71f)
-        {
-            slideScreenshotFrame = capturedFrameCount;
-            slideScreenshotCaptured = true;
-        }
     }
 
-    private bool ExportStoreScreenshots()
+    private IEnumerator CaptureStoreScreenshots()
     {
-        return ExportStoreScreenshot(routeScreenshotFrame, "01-route-reading.png") &&
-               ExportStoreScreenshot(jumpScreenshotFrame, "02-jump-clear.png") &&
-               ExportStoreScreenshot(slideScreenshotFrame, "03-slide-clear.png");
+        game.StartLevelForTests(1, RunnerLevelCatalog.Levels[0].Seed);
+        game.AdvanceWorldForTests(36f);
+        yield return EndOfFrame;
+        levelScreenshotCaptured = CaptureScreenshot("01-level-lives.png");
+
+        game.StartLevelForTests(2, RunnerLevelCatalog.Levels[1].Seed);
+        game.AdvanceWorldForTests(RunnerLevelCatalog.Levels[1].CheckpointDistance(1) + 12f);
+        game.TakeHitForTests();
+        yield return EndOfFrame;
+        checkpointScreenshotCaptured = CaptureScreenshot("02-checkpoint-recovery.png");
+
+        game.StartLevelForTests(3, RunnerLevelCatalog.Levels[2].Seed);
+        game.AdvanceWorldForTests(game.LevelTargetDistance);
+        yield return EndOfFrame;
+        clearScreenshotCaptured = CaptureScreenshot("03-level-clear.png");
     }
 
-    private bool ExportStoreScreenshot(int frameIndex, string fileName)
+    private bool CaptureScreenshot(string fileName)
     {
-        if (frameIndex < 0)
-        {
-            return false;
-        }
-
-        string source = Path.Combine(
-            framesDirectory,
-            string.Format(CultureInfo.InvariantCulture, "frame-{0:D4}.png", frameIndex));
-        if (!File.Exists(source))
-        {
-            return false;
-        }
-
-        File.Copy(source, Path.Combine(screenshotsDirectory, fileName), true);
+        ScreenCapture.CaptureScreenshot(Path.Combine(screenshotsDirectory, fileName));
         return true;
     }
 
@@ -237,13 +209,13 @@ public sealed class RunnerMediaCapture : MonoBehaviour
     {
         string manifest = string.Format(
             CultureInfo.InvariantCulture,
-            "seed={0}\nframeRate={1}\nframes={2}\nrouteScreenshot={3}\njumpScreenshot={4}\nslideScreenshot={5}\nerror={6}\n",
-            CaptureSeed,
+            "level={0}\nframeRate={1}\nframes={2}\nlevelScreenshot={3}\ncheckpointScreenshot={4}\nclearScreenshot={5}\nerror={6}\n",
+            CaptureLevelNumber,
             FrameRate,
             capturedFrameCount,
-            routeScreenshotCaptured,
-            jumpScreenshotCaptured,
-            slideScreenshotCaptured,
+            levelScreenshotCaptured,
+            checkpointScreenshotCaptured,
+            clearScreenshotCaptured,
             error ?? string.Empty);
         File.WriteAllText(Path.Combine(outputDirectory, "capture-manifest.txt"), manifest);
     }

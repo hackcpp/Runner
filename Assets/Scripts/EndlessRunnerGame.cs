@@ -738,7 +738,9 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         while (nextPatternZ < obstacleGenerationMinimumZ)
         {
-            RunnerPatternDefinition pattern = patternSequence.Next(ActiveLevel.TierForDistance(nextPatternZ));
+            int tier = ActiveLevel.TierForDistance(
+                RunnerRunTuning.GenerationDistanceForPattern(nextPatternZ));
+            RunnerPatternDefinition pattern = patternSequence.Next(tier);
             nextPatternZ += pattern.Length + patternSequence.NextSpacing();
         }
     }
@@ -875,7 +877,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             ActiveLevel.TargetDistance + FinishVisualObstacleDistance);
         while (nextPatternZ < generationLimit)
         {
-            int tier = ActiveLevel.TierForDistance(nextPatternZ);
+            int tier = ActiveLevel.TierForDistance(
+                RunnerRunTuning.GenerationDistanceForPattern(nextPatternZ));
             RunnerPatternDefinition pattern = patternSequence.Next(tier);
             CreatePattern(pattern, nextPatternZ);
             nextPatternZ += pattern.Length + patternSequence.NextSpacing();

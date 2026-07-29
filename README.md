@@ -151,7 +151,7 @@ Android 触摸输入组件。按屏幕 DPI 计算最小滑动距离，通过主�
 
 ### `Assets/Scripts/RunnerMediaCapture.cs`
 
-仅在 Player 显式传入 `-taptapCapture -captureOutput <目录>` 时启用。它使用固定种子和模拟器验证过的路径自动完成换道、跳跃与滑铲，以 `1920x1080`、24 fps 输出连续帧和三张关键动作图；普通启动及 Android 触控流程不会挂载该组件。
+仅在 Player 显式传入 `-taptapCapture -captureOutput <目录>` 时启用。它使用固定种子和模拟器验证过的路径自动完成换道、跳跃与滑铲，严格遵守正常碰撞结算，以 `1920x1080`、24 fps 输出第 3 关连续帧，并采集第 1 关生命 HUD、第 2 关检查点恢复和第 3 关通关庆祝图；普通启动及 Android 触控流程不会挂载该组件。
 
 ### `Assets/Scripts/RunnerHud.cs`
 
