@@ -2,7 +2,7 @@
 
 一个用于作品集展示的 Unity 3D 第三人称无尽跑酷切片，强调三车道决策、跳跃、滑铲和连续动作反馈。
 
-产品名：`Rooftop Runner`
+工程与 macOS 产品名：`Rooftop Runner`；TapTap Android 应用显示名：`天台疾跑`
 
 当前版本闭环为：开始游戏、自动前进、三车道切换、跳跃、滑铲、分级障碍模式、动作奖励、碰撞失败、结算和一键重开。
 
@@ -56,7 +56,7 @@
 Android 触屏：
 
 - 点击界面按钮开始、继续、重开或退出
-- 开始页会显示触点与四向手势符号；教学障碍前显示当前需要的滑动方向
+- 开始页会循环演示手指向左、右、上、下滑动的轨迹；教学障碍前显示当前需要的滑动方向
 - 左右滑动切换车道，上滑跳跃，下滑滑铲；越过识别距离后立即响应，无需等待松手
 - 点击右上角暂停按钮暂停；开始、暂停和结算界面提供 `EXIT`
 - Android 返回键在跑动中暂停、在暂停界面继续、在开始或结算界面退出
@@ -76,6 +76,7 @@ Runner/
 │   │   ├── RunnerMotionEffects.cs         # 脚步、尘雾、火花和速度拖尾
 │   │   ├── RunnerGameplay.cs              # 障碍规则、模式目录、奖励和分数
 │   │   ├── RunnerRunSimulation.cs         # 完整跑局生成和生存路径模拟
+│   │   ├── RunnerMediaCapture.cs           # 显式参数启用的确定性商店素材采集
 │   │   ├── RunnerHud.cs                   # 响应式 Canvas HUD 和状态面板
 │   │   ├── RunnerCameraRig.cs             # 相机跟随、倾斜、FOV 和震动
 │   │   ├── RunnerWorldPool.cs             # 世界几何体和障碍根节点复用
@@ -144,7 +145,11 @@ Android 触摸输入组件。按屏幕 DPI 计算最小滑动距离，通过主�
 
 ### `Assets/Scripts/RunnerRunSimulation.cs`
 
-纯 C# 跑局模拟器。复用运行时速度、教学距离和难度分档参数，能够从中心车道开始验证教学序列、随机模式及模式边界的完整生存路径。批量测试会覆盖 5000 个固定种子和 1200 米距离。
+纯 C# 跑局模拟器。复用运行时速度、教学距离和难度分档参数，能够从中心车道开始验证教学序列、随机模式及模式边界的完整生存路径，并为确定性素材采集暴露已验证的障碍行与车道路径。批量测试会覆盖 5000 个固定种子和 1200 米距离。
+
+### `Assets/Scripts/RunnerMediaCapture.cs`
+
+仅在 Player 显式传入 `-taptapCapture -captureOutput <目录>` 时启用。它使用固定种子和模拟器验证过的路径自动完成换道、跳跃与滑铲，以 `1920x1080`、24 fps 输出连续帧和三张关键动作图；普通启动及 Android 触控流程不会挂载该组件。
 
 ### `Assets/Scripts/RunnerHud.cs`
 
@@ -313,6 +318,7 @@ Android 构建配置：
 
 ```text
 Package Name: com.hackcpp.rooftoprunner
+Application Label: 天台疾跑
 Version Name: 0.1.0
 Version Code: 1
 Minimum API: 24 (Android 7.0)
@@ -358,11 +364,11 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
 
 PlayMode Test Runner 会在测试结束后自行退出；不要为该命令添加 `-quit`，否则脚本重新导入时可能在测试启动前提前退出。
 
-当前 PlayMode 冒烟套件共 22 项，覆盖角色输入缓冲、触摸手势分类与动作分发、安全区域、明确退出入口和纯触控流程、程序化人物姿态与动作粒子、分层音乐结构与样本质量、动态混音和音频对象复用、暂停恢复、完整障碍路径求解、5000 个种子的跨模式跑局模拟、无物理碰撞体约束、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
+当前 PlayMode 冒烟套件共 23 项，覆盖角色输入缓冲、触摸手势分类与动作分发、安全区域、明确退出入口和纯触控流程、程序化人物姿态与动作粒子、分层音乐结构与样本质量、动态混音和音频对象复用、暂停恢复、完整障碍路径求解、5000 个种子的跨模式跑局模拟、素材采集路径一致性、无物理碰撞体约束、连击计分、固定种子，以及约 10 分钟距离的世界对象池稳定性。
 
 ### 当前验证基线
 
-- PlayMode：`22/22` 通过
+- PlayMode：`23/23` 通过
 - 程序化音乐：三层同步循环约 `30.48s`，峰值、直流偏移、循环接缝和有限样本全部通过自动化阈值
 - 音频稳定性：重开、暂停、恢复及 10 分钟等效运行后仍保持 4 个音源和 3 个音乐片段，不重复创建
 - 跑局公平性：连续验证 `5000` 个固定种子，每局 `1200m`，无无解序列
@@ -377,11 +383,41 @@ PlayMode Test Runner 会在测试结束后自行退出；不要为该命令添�
 
 如果命令行提示项目已被另一个 Unity 实例打开，需要先关闭 Unity Editor，再重试。
 
-## TapTap macOS PC 项目侧适配
+## TapTap 发布准备
 
-当前 TapTap 打包流程只准备 macOS PC 端包体。Android 已具备本地 APK 构建、触摸操作和真机验收能力，但不包含 Android 商店签名、TapTap SDK、开发者账号注册或后台提交流程；iOS 尚未适配。
+当前 TapTap 开发者后台提供 Android、TapTap Windows 和 Steam 配置，没有独立 macOS 包上传入口。因此当前上架主线应使用已经完成触控与真机验收的 Android 版本；macOS ZIP 继续作为作品集或其他渠道交付包，不再描述为 TapTap 可直接上传的 PC 包。
 
-### 1. 生成 Release 上传包
+商店名称、定位文案、上传素材、发布清单和隐私政策草案统一保存在本地 `Distribution/TapTap/`。根目录 `Distribution/` 是不提交到 GitHub 的发布工作区，已由 `.gitignore` 整体排除，因此 README 不链接其中的本地文件。
+
+三类视觉资源的职责固定如下：
+
+| 目录 | 唯一用途 | Git 状态 |
+| --- | --- | --- |
+| `Assets/Brand/` | Unity 构建实际使用的应用图标源图 | 提交 |
+| `Portfolio/Screenshots/` | README 与 GitHub 作品集预览截图 | 提交 |
+| `Distribution/TapTap/StoreUpload/` | TapTap 后台待上传的图标、截图、视频和宣传图导出件 | 不提交 |
+
+`Assets/Brand/AppIcon.png` 与 TapTap 上传图标必须使用同一画稿；两者只允许因目标平台要求存在格式、尺寸、色彩配置或透明通道差异，不能使用不同构图或风格。
+
+Android 已具备本地 APK 构建、横屏触控和至少一台 ARM64 真机验收能力，但正式上架仍需独立 keystore、隐私政策、资质与防沉迷材料；iOS 尚未适配。
+
+### 1. 生成本地 Release 包
+
+Android TapTap 候选包：
+
+```text
+Runner -> Build -> Android Release APK
+```
+
+默认输出：
+
+```text
+Builds/RooftopRunner-android-0.1.0.apk
+```
+
+当前 APK 使用调试签名，只能用于测试；正式上传前必须配置并备份独立 Android keystore，然后重新构建和真机回归。
+
+macOS 作品集或其他渠道包：
 
 Unity 菜单：
 
@@ -407,7 +443,7 @@ Runner -> Build -> Mac Release Zip For TapTap
 Builds/RooftopRunner-mac-0.1.0.zip
 ```
 
-### 2. 本机验包
+### 2. macOS 本机验包
 
 先运行 `.app`：
 
@@ -424,9 +460,9 @@ open /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app
 - `R` 能重开
 - Release 包没有 Development Build 水印
 
-### 3. 包体信息
+### 3. 当前包体信息
 
-项目侧已经生成可上传包：
+项目侧已经生成 macOS 分发包：
 
 ```text
 Builds/RooftopRunner-mac-0.1.0.zip
@@ -450,16 +486,17 @@ com.hackcpp.rooftoprunner
 0.1.0
 ```
 
-### 4. 待补项目素材
+### 4. TapTap 上架阻塞项
 
-上 TapTap 前项目侧还建议补齐：
+后台正式发布前至少还需补齐：
 
-- 图标
-- 启动画面或自定义 splash
-- 游戏截图：开始界面、跑酷中、失败结算
-- 隐私政策页面链接
-- 正式 Release 版本说明
-- Apple Developer ID 签名和 notarization，公开下载前建议补齐
+- ISBN 与游戏资质；后台提示正式上线开放下载或内购时必须提供。
+- 未成年人防沉迷系统和接入视频证明；后台提示 APK 测试或下载需要提供。
+- Android 正式签名、公开 HTTPS 隐私政策和正确的平台、类型、包名配置。
+- 已生成的 3 张 `1920x1080` 横屏实机截图、18 秒 H.264 视频和 `1920x1080` 标题宣传图需要在 Android 真机对照后手动上传。
+- 隐私政策草案仍需填写发布主体、联系邮箱和生效日期，并部署为公开 HTTPS 页面。
+
+完整尺寸、格式和渠道清单见本地文件 `Distribution/TapTap/MATERIAL_CHECKLIST.md`。
 
 ### 5. 当前项目配置
 
@@ -467,6 +504,7 @@ com.hackcpp.rooftoprunner
 
 ```text
 Product Name: Rooftop Runner
+Android Application Label: 天台疾跑
 Company Name: hackcpp
 Bundle Identifier: com.hackcpp.rooftoprunner
 Version: 0.1.0

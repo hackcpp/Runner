@@ -558,8 +558,10 @@ public sealed class EndlessRunnerSmokeTests
             "\u2193",
             1f,
             true));
-        Assert.IsTrue(GameObject.Find("Action Hint").GetComponent<Text>().text.Contains("\u25cf"));
+        Assert.AreEqual("\u2193", GameObject.Find("Action Hint").GetComponent<Text>().text);
+        Assert.IsFalse(GameObject.Find("Action Hint").GetComponent<Text>().text.Contains("\u25cf"));
         Assert.IsFalse(exitButton.gameObject.activeInHierarchy, "Exit should not be exposed during active play.");
+        Assert.IsFalse(hud.GestureGuideRoot.gameObject.activeInHierarchy);
         hud.Render(new RunnerHudViewModel(
             RunnerHudMode.Start,
             0,
@@ -574,13 +576,79 @@ public sealed class EndlessRunnerSmokeTests
             null,
             0f,
             true));
-        Assert.IsTrue(GameObject.Find("Panel Details").GetComponent<Text>().text.Contains("\u2193"));
+        Assert.AreEqual(string.Empty, GameObject.Find("Panel Details").GetComponent<Text>().text);
+        Assert.IsTrue(hud.GestureGuideRoot.gameObject.activeInHierarchy);
         Assert.IsTrue(exitButton.gameObject.activeInHierarchy, "The start overlay should expose exit.");
+
+        hud.SetGestureGuideTimeForTests(0.55f);
+        Assert.AreEqual(0, hud.GestureGuideDirectionIndex);
+        Assert.AreEqual("\u2190", hud.GestureArrow.text);
+        Assert.Less(hud.GestureFinger.anchoredPosition.x, -10f);
+        Assert.Greater(hud.GestureTrail.rectTransform.sizeDelta.x, 10f);
+
+        hud.SetGestureGuideTimeForTests(1.65f);
+        Assert.AreEqual(1, hud.GestureGuideDirectionIndex);
+        Assert.AreEqual("\u2192", hud.GestureArrow.text);
+        Assert.Greater(hud.GestureFinger.anchoredPosition.x, 10f);
+
+        hud.SetGestureGuideTimeForTests(2.75f);
+        Assert.AreEqual(2, hud.GestureGuideDirectionIndex);
+        Assert.AreEqual("\u2191", hud.GestureArrow.text);
+        Assert.Greater(hud.GestureFinger.anchoredPosition.y, 4f);
+        RectTransform panelScoreTransform = GameObject.Find("Panel Score").GetComponent<RectTransform>();
+        float scoreBottom = panelScoreTransform.anchoredPosition.y -
+                            panelScoreTransform.sizeDelta.y * panelScoreTransform.pivot.y;
+        float upArrowTop = hud.GestureGuideRoot.anchoredPosition.y + hud.GestureArrow.rectTransform.anchoredPosition.y +
+                           hud.GestureArrow.rectTransform.sizeDelta.y * (1f - hud.GestureArrow.rectTransform.pivot.y);
+        Assert.LessOrEqual(upArrowTop, scoreBottom, "The upward gesture should not overlap the best score.");
+
+        hud.SetGestureGuideTimeForTests(3.85f);
+        Assert.AreEqual(3, hud.GestureGuideDirectionIndex);
+        Assert.AreEqual("\u2193", hud.GestureArrow.text);
+        Assert.Less(hud.GestureFinger.anchoredPosition.y, -4f);
+        RectTransform primaryTransform = primaryButton.GetComponent<RectTransform>();
+        float primaryTop = primaryTransform.anchoredPosition.y +
+                           primaryTransform.sizeDelta.y * (1f - primaryTransform.pivot.y);
+        float downArrowBottom = hud.GestureGuideRoot.anchoredPosition.y +
+                                hud.GestureArrow.rectTransform.anchoredPosition.y -
+                                hud.GestureArrow.rectTransform.sizeDelta.y * hud.GestureArrow.rectTransform.pivot.y;
+        Assert.GreaterOrEqual(downArrowBottom, primaryTop, "The downward gesture should not overlap the start button.");
+
+        hud.Render(new RunnerHudViewModel(
+            RunnerHudMode.Start,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0f,
+            0,
+            0f,
+            null,
+            0f,
+            false));
+        Assert.IsFalse(hud.GestureGuideRoot.gameObject.activeInHierarchy, "Desktop start should not show touch gestures.");
+        hud.Render(new RunnerHudViewModel(
+            RunnerHudMode.Start,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0f,
+            0,
+            0f,
+            null,
+            0f,
+            true));
 
         primaryButton.onClick.Invoke();
         yield return null;
         Assert.IsTrue(game.IsPlaying, "The start button should begin a run without keyboard input.");
         Assert.IsTrue(pauseButton.gameObject.activeSelf);
+        Assert.IsFalse(hud.GestureGuideRoot.gameObject.activeInHierarchy);
 
         pauseButton.onClick.Invoke();
         yield return null;
@@ -666,6 +734,17 @@ public sealed class EndlessRunnerSmokeTests
             RunnerObstacleKind.Overhead,
             RunnerActionState.Sliding,
             0f));
+    }
+
+    [Test]
+    public void CapturePlanningExposesTheVerifiedRunRows()
+    {
+        RunnerRunSimulationResult result = RunnerRunSimulator.Simulate(20260729, 240f);
+
+        Assert.IsTrue(result.IsSurvivable);
+        Assert.AreEqual(result.RowCount, result.Rows.Count);
+        Assert.AreEqual(result.Rows.Count, result.LanePath.Count);
+        Assert.Greater(result.Rows.Count, 3);
     }
 
     [Test]

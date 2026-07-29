@@ -15,7 +15,7 @@ Rooftop Runner 是一个用于作品集展示的 Unity 3D 三车道无尽跑酷�
 - 产品版本：`0.1.0`
 - Bundle Identifier：`com.hackcpp.rooftoprunner`
 - 许可证：Unity Personal
-- 测试基线：PlayMode `22/22`
+- 测试基线：PlayMode `23/23`
 - Release：`x86_64 + arm64` Universal Binary，ad-hoc 签名
 
 除非用户明确扩大范围，不迁移到 Input System、URP、Rigidbody 控制、正式 UI 框架、iOS 或手柄。
@@ -104,6 +104,11 @@ Unity 可执行文件：
 - 保持屋顶黄昏主题、暖色窗户、深色屋面和高对比障碍的现有视觉语言。
 - 新截图必须是有意更新的作品集资产；临时截图和 Player 日志不得提交。
 - 不修改应用图标、产品名、版本号、Bundle Identifier 或 TapTap 打包方式，除非用户明确要求。
+- 正式应用图标与 TapTap 上传图标必须来自同一画稿，不得分别设计两套风格。两者的构图、图形、配色、比例和标记必须一致，只允许因平台要求产生文件格式、像素尺寸、色彩配置或透明通道差异。
+- 用户确认新图标为正式版本后，必须在同一轮同步 `Assets/Brand/AppIcon.png`、本地 `Distribution/TapTap/StoreUpload/Icon/` 和对应可编辑源文件；保留 Unity `.meta` GUID，并重新验证 macOS 与 Android 构建图标。
+- 任何会改变实际游戏画面、HUD、角色、障碍、世界、灯光、特效或相机构图的修改，都必须检查并按影响范围同步 `Portfolio/Screenshots/` 与本地 `Distribution/TapTap/StoreUpload/` 中的截图、视频和宣传图。
+- `Distribution/` 虽然不提交 Git，但不是可省略的发布同步目标。若该目录在当前工作区缺失或本轮无法重生成材料，必须在优化台账和最终回复中明确记录未同步项，不得将相关视觉迭代标记为全部完成。
+- 同步视觉资产后，检查文件用途、尺寸、格式、透明通道和文件大小，并确认 README、发布清单及上传指南没有引用过期文件。
 
 ## Unity Personal 启动画面
 
@@ -168,6 +173,7 @@ rg 'testcasecount|result="(Passed|Failed)"' unity-playmode-results.xml
 - 三类障碍碰撞规则
 - 单次动作奖励和连击
 - 全模式合法路径和固定种子稳定性
+- 确定性商店素材采集路径与模拟结果一致性
 - 5000 个种子、每局 1200 米完整跑局
 - 10 分钟对象池有界性
 - 暂停和恢复

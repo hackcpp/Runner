@@ -346,6 +346,7 @@ public sealed class RunnerRunSimulationResult
         IReadOnlyList<string> patternIds,
         IReadOnlyList<int> lanePath,
         string sequenceFingerprint,
+        IReadOnlyList<RunnerObstacleRow> rows,
         int[] tierPatternCounts,
         int[] obstacleCounts,
         int rowCount,
@@ -359,6 +360,7 @@ public sealed class RunnerRunSimulationResult
         PatternIds = patternIds;
         LanePath = lanePath;
         SequenceFingerprint = sequenceFingerprint;
+        Rows = rows;
         TierPatternCounts = tierPatternCounts;
         ObstacleCounts = obstacleCounts;
         RowCount = rowCount;
@@ -375,6 +377,7 @@ public sealed class RunnerRunSimulationResult
     public float FailureZ { get; }
     public IReadOnlyList<string> PatternIds { get; }
     public IReadOnlyList<int> LanePath { get; }
+    public IReadOnlyList<RunnerObstacleRow> Rows { get; }
     public string SequenceFingerprint { get; }
     public int PatternCount => PatternIds.Count;
     public int RowCount { get; }
@@ -511,6 +514,7 @@ public static class RunnerRunSimulator
             patternIds,
             lanePath,
             fingerprint.ToString(),
+            rows,
             tierPatternCounts,
             obstacleCounts,
             rows.Count,

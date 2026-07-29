@@ -4,7 +4,8 @@ using UnityEngine;
 public static class RunnerBuild
 {
     private const string AppName = "RooftopRunner";
-    private const string ProductName = "Rooftop Runner";
+    private const string DesktopProductName = "Rooftop Runner";
+    private const string AndroidProductName = "天台疾跑";
     private const string CompanyName = "hackcpp";
     private const string BundleIdentifier = "com.hackcpp.rooftoprunner";
     private const string Version = "0.1.0";
@@ -94,14 +95,14 @@ public static class RunnerBuild
 
     private static void ApplyMacPlayerSettings()
     {
-        Texture2D icon = ApplyCommonPlayerSettings();
+        Texture2D icon = ApplyCommonPlayerSettings(DesktopProductName);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Standalone, BundleIdentifier);
         PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Standalone, new[] { icon });
     }
 
     private static void ApplyAndroidPlayerSettings()
     {
-        Texture2D icon = ApplyCommonPlayerSettings();
+        Texture2D icon = ApplyCommonPlayerSettings(AndroidProductName);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, BundleIdentifier);
         PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Android, new[] { icon });
         PlayerSettings.Android.bundleVersionCode = 1;
@@ -118,10 +119,10 @@ public static class RunnerBuild
         EditorUserBuildSettings.buildAppBundle = false;
     }
 
-    private static Texture2D ApplyCommonPlayerSettings()
+    private static Texture2D ApplyCommonPlayerSettings(string productName)
     {
         PlayerSettings.companyName = CompanyName;
-        PlayerSettings.productName = ProductName;
+        PlayerSettings.productName = productName;
         PlayerSettings.bundleVersion = Version;
         ApplySplashScreenSettings();
 

@@ -60,10 +60,26 @@ public readonly struct RunnerHudViewModel
 
 public sealed class RunnerHud : MonoBehaviour
 {
+    private const float GestureDirectionDuration = 1.1f;
+
     private static readonly Color PrimaryText = new Color(0.96f, 0.98f, 1f);
     private static readonly Color SecondaryText = new Color(0.72f, 0.8f, 0.84f);
     private static readonly Color Accent = new Color(0.05f, 0.72f, 0.8f);
     private static readonly Color Reward = new Color(1f, 0.84f, 0.2f);
+    private static readonly Vector2[] GestureDirections =
+    {
+        Vector2.left,
+        Vector2.right,
+        Vector2.up,
+        Vector2.down
+    };
+    private static readonly string[] GestureArrows =
+    {
+        "\u2190",
+        "\u2192",
+        "\u2191",
+        "\u2193"
+    };
 
     private Action startAction;
     private Action pauseAction;
@@ -87,15 +103,27 @@ public sealed class RunnerHud : MonoBehaviour
     private Button pauseButton;
     private Button primaryButton;
     private Button exitButton;
+    private RectTransform gestureGuideRoot;
+    private RectTransform gestureFinger;
+    private Image gestureTrail;
+    private Text gestureArrow;
+    private CanvasGroup gestureFingerCanvasGroup;
     private RectTransform gameplaySafeArea;
     private RectTransform overlaySafeArea;
     private Rect appliedSafeArea;
     private Vector2 appliedScreenSize;
+    private float gestureGuideTime;
     private bool hasAppliedSafeArea;
+    private bool gestureGuideVisible;
 
     public Button PauseButton => pauseButton;
     public Button PrimaryButton => primaryButton;
     public Button ExitButton => exitButton;
+    public RectTransform GestureGuideRoot => gestureGuideRoot;
+    public RectTransform GestureFinger => gestureFinger;
+    public Image GestureTrail => gestureTrail;
+    public Text GestureArrow => gestureArrow;
+    public int GestureGuideDirectionIndex { get; private set; }
     public RectTransform GameplaySafeArea => gameplaySafeArea;
     public RectTransform OverlaySafeArea => overlaySafeArea;
 
@@ -155,7 +183,7 @@ public sealed class RunnerHud : MonoBehaviour
         hintText.gameObject.SetActive(showHint);
         if (showHint)
         {
-            hintText.text = model.TouchControls ? "\u25cf   " + model.HintSymbol : model.HintSymbol;
+            hintText.text = model.HintSymbol;
             hintText.color = WithAlpha(Reward, model.HintAlpha);
         }
 
@@ -164,6 +192,8 @@ public sealed class RunnerHud : MonoBehaviour
         {
             RenderOverlay(model);
         }
+
+        SetGestureGuideVisible(model.Mode == RunnerHudMode.Start && model.TouchControls);
     }
 
     public void ApplySafeAreaForTests(Rect safeArea, Vector2 screenSize)
@@ -171,9 +201,22 @@ public sealed class RunnerHud : MonoBehaviour
         ApplySafeArea(safeArea, screenSize);
     }
 
+    public void SetGestureGuideTimeForTests(float elapsed)
+    {
+        gestureGuideTime = Mathf.Repeat(elapsed, GestureDirectionDuration * GestureDirections.Length);
+        RenderGestureGuideAnimation();
+    }
+
     private void Update()
     {
         ApplySafeArea(Screen.safeArea, new Vector2(Screen.width, Screen.height));
+        if (gestureGuideRoot != null && gestureGuideRoot.gameObject.activeInHierarchy)
+        {
+            gestureGuideTime = Mathf.Repeat(
+                gestureGuideTime + Time.unscaledDeltaTime,
+                GestureDirectionDuration * GestureDirections.Length);
+            RenderGestureGuideAnimation();
+        }
     }
 
     private void Initialize(
@@ -359,6 +402,8 @@ public sealed class RunnerHud : MonoBehaviour
             FontStyle.Normal,
             SecondaryText);
 
+        BuildGestureGuide();
+
         primaryButton = CreateButton(
             overlaySafeArea,
             "Primary Action",
@@ -383,9 +428,7 @@ public sealed class RunnerHud : MonoBehaviour
         {
             panelTitle.text = "ROOFTOP RUNNER";
             panelScore.text = "BEST  " + model.BestScore;
-            panelDetails.text = model.TouchControls
-                ? "\u25cf    \u2190  \u2192       \u2191       \u2193"
-                : string.Empty;
+            panelDetails.text = string.Empty;
             primaryButtonLabel.text = "START RUN";
             return;
         }
@@ -404,6 +447,144 @@ public sealed class RunnerHud : MonoBehaviour
         panelDetails.text = "DISTANCE  " + model.Distance + " m    ACTIONS  " + model.ActionCount +
                             "\nBEST COMBO  x" + model.RunBestCombo;
         primaryButtonLabel.text = "RESTART";
+    }
+
+    private void BuildGestureGuide()
+    {
+        GameObject guideObject = new GameObject("Swipe Gesture Guide", typeof(RectTransform));
+        guideObject.transform.SetParent(overlaySafeArea, false);
+        gestureGuideRoot = guideObject.GetComponent<RectTransform>();
+        gestureGuideRoot.anchorMin = new Vector2(0.5f, 0.5f);
+        gestureGuideRoot.anchorMax = new Vector2(0.5f, 0.5f);
+        gestureGuideRoot.pivot = new Vector2(0.5f, 0.5f);
+        gestureGuideRoot.anchoredPosition = new Vector2(0f, -36f);
+        gestureGuideRoot.sizeDelta = new Vector2(280f, 80f);
+
+        gestureTrail = CreateImage(
+            gestureGuideRoot,
+            "Swipe Trail",
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            Vector2.zero,
+            new Vector2(0f, 5f),
+            Reward);
+
+        gestureArrow = CreateText(
+            gestureGuideRoot,
+            "Swipe Direction",
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            Vector2.zero,
+            new Vector2(30f, 30f),
+            28,
+            TextAnchor.MiddleCenter,
+            FontStyle.Bold,
+            Reward);
+
+        GameObject fingerObject = new GameObject("Swipe Finger", typeof(RectTransform), typeof(CanvasGroup));
+        fingerObject.transform.SetParent(gestureGuideRoot, false);
+        gestureFinger = fingerObject.GetComponent<RectTransform>();
+        gestureFinger.anchorMin = new Vector2(0.5f, 0.5f);
+        gestureFinger.anchorMax = new Vector2(0.5f, 0.5f);
+        gestureFinger.pivot = new Vector2(0.5f, 0.5f);
+        gestureFinger.sizeDelta = new Vector2(36f, 42f);
+        gestureFingerCanvasGroup = fingerObject.GetComponent<CanvasGroup>();
+        gestureFingerCanvasGroup.interactable = false;
+        gestureFingerCanvasGroup.blocksRaycasts = false;
+
+        CreateImage(
+            gestureFinger,
+            "Finger Palm",
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0f, -7f),
+            new Vector2(20f, 21f),
+            PrimaryText);
+        CreateImage(
+            gestureFinger,
+            "Index Finger",
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(-6f, 8f),
+            new Vector2(8f, 27f),
+            PrimaryText);
+        CreateImage(
+            gestureFinger,
+            "Middle Finger",
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(3f, 2f),
+            new Vector2(7f, 15f),
+            PrimaryText);
+        Image thumb = CreateImage(
+            gestureFinger,
+            "Thumb",
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(11f, -4f),
+            new Vector2(12f, 7f),
+            PrimaryText);
+        thumb.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -24f);
+        CreateImage(
+            gestureFinger,
+            "Finger Cuff",
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0f, -20f),
+            new Vector2(20f, 6f),
+            Accent);
+
+        gestureGuideRoot.gameObject.SetActive(false);
+        RenderGestureGuideAnimation();
+    }
+
+    private void SetGestureGuideVisible(bool visible)
+    {
+        if (gestureGuideVisible != visible)
+        {
+            gestureGuideTime = 0f;
+            gestureGuideVisible = visible;
+            RenderGestureGuideAnimation();
+        }
+
+        gestureGuideRoot.gameObject.SetActive(visible);
+    }
+
+    private void RenderGestureGuideAnimation()
+    {
+        if (gestureFinger == null)
+        {
+            return;
+        }
+
+        float totalDuration = GestureDirectionDuration * GestureDirections.Length;
+        float wrappedTime = Mathf.Repeat(gestureGuideTime, totalDuration);
+        GestureGuideDirectionIndex = Mathf.FloorToInt(wrappedTime / GestureDirectionDuration);
+        float phase = Mathf.Repeat(wrappedTime, GestureDirectionDuration) / GestureDirectionDuration;
+        Vector2 direction = GestureDirections[GestureGuideDirectionIndex];
+        bool horizontal = Mathf.Abs(direction.x) > 0f;
+        float travelDistance = horizontal ? 52f : 18f;
+        float arrowDistance = horizontal ? 78f : 30f;
+        float movement = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.14f, 0.7f, phase));
+        float fade = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.78f, 0.98f, phase));
+        float trailLength = travelDistance * movement;
+        Vector2 fingerPosition = direction * trailLength;
+
+        gestureFinger.anchoredPosition = fingerPosition;
+        gestureFinger.localScale = Vector3.one * Mathf.Lerp(0.9f, 1f, movement);
+        gestureFingerCanvasGroup.alpha = fade;
+
+        gestureTrail.rectTransform.anchoredPosition = direction * (trailLength * 0.5f);
+        gestureTrail.rectTransform.sizeDelta = new Vector2(trailLength, 5f);
+        gestureTrail.rectTransform.localRotation = Quaternion.Euler(
+            0f,
+            0f,
+            Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg);
+        gestureTrail.color = WithAlpha(Reward, fade * Mathf.Lerp(0.12f, 0.72f, movement));
+
+        gestureArrow.text = GestureArrows[GestureGuideDirectionIndex];
+        gestureArrow.rectTransform.anchoredPosition = direction * arrowDistance;
+        gestureArrow.color = WithAlpha(Reward, fade * Mathf.Lerp(0.45f, 1f, movement));
     }
 
     private void HandlePrimaryButton()

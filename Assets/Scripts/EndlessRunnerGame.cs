@@ -155,6 +155,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             RequestExit);
         touchInput = RunnerTouchInput.AttachTo(gameObject, runnerMotor);
         ResetRun(GameState.StartScreen);
+        RunnerMediaCapture.AttachIfRequested(gameObject, this);
     }
 
     private void Update()
