@@ -225,9 +225,9 @@ public static class RunnerLevelCatalog
 
     private static readonly RunnerLevelDefinition[] Definitions =
     {
-        new RunnerLevelDefinition(1, "ROOFTOP BASICS", 280f, 0, 17031, RunnerLevelMood.BlueDusk, 9.4f, 0.12f, 12.5f),
-        new RunnerLevelDefinition(2, "CITY RHYTHM", 420f, 1, 27059, RunnerLevelMood.GoldenSunset, 10.4f, 0.16f, 14.5f),
-        new RunnerLevelDefinition(3, "SUNSET SPRINT", 600f, 2, 37087, RunnerLevelMood.VioletNight, 11.4f, 0.2f, 16.5f)
+        new RunnerLevelDefinition(1, "ROOFTOP BASICS", 360f, 0, 17031, RunnerLevelMood.BlueDusk, 9.4f, 0.12f, 12.5f),
+        new RunnerLevelDefinition(2, "CITY RHYTHM", 520f, 1, 27059, RunnerLevelMood.GoldenSunset, 10.4f, 0.16f, 14.5f),
+        new RunnerLevelDefinition(3, "SUNSET SPRINT", 720f, 2, 37087, RunnerLevelMood.VioletNight, 11.4f, 0.2f, 16.5f)
     };
 
     public static IReadOnlyList<RunnerLevelDefinition> Levels => Definitions;

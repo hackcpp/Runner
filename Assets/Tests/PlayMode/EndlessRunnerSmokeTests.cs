@@ -203,6 +203,44 @@ public sealed class EndlessRunnerSmokeTests
     }
 
     [UnityTest]
+    public IEnumerator EveryLevelBuildsAColliderFreeFinishLineAtItsTarget()
+    {
+        yield return null;
+        yield return null;
+
+        EndlessRunnerGame game = Object.FindObjectOfType<EndlessRunnerGame>();
+        for (int levelNumber = 1; levelNumber <= RunnerLevelCatalog.Levels.Count; levelNumber++)
+        {
+            game.StartLevelForTests(levelNumber, RunnerLevelCatalog.Levels[levelNumber - 1].Seed);
+            game.AdvanceWorldForTests(game.LevelTargetDistance - 20f);
+            yield return null;
+
+            GameObject firstTile = GameObject.Find("Finish Line Tile 0 0");
+            GameObject lastTile = GameObject.Find("Finish Line Tile 1 11");
+            Assert.NotNull(firstTile, "Level " + levelNumber + " should create the near finish row.");
+            Assert.NotNull(lastTile, "Level " + levelNumber + " should create the far finish row.");
+            Assert.AreEqual(game.LevelTargetDistance - 0.22f, firstTile.transform.position.z, 0.001f);
+            Assert.AreEqual(game.LevelTargetDistance + 0.22f, lastTile.transform.position.z, 0.001f);
+            Assert.IsNull(firstTile.GetComponent<Collider>());
+            Assert.IsNull(lastTile.GetComponent<Collider>());
+            Assert.AreEqual(
+                0,
+                game.FinishClearanceObstacleCount,
+                "Level " + levelNumber + " should keep the finish line clear of obstacles.");
+
+            RunnerRunSimulationResult simulation = RunnerRunSimulator.Simulate(
+                RunnerLevelCatalog.Levels[levelNumber - 1]);
+            for (int rowIndex = 0; rowIndex < simulation.Rows.Count; rowIndex++)
+            {
+                Assert.GreaterOrEqual(
+                    Mathf.Abs(simulation.Rows[rowIndex].Z - game.LevelTargetDistance),
+                    RunnerRunTuning.FinishLineClearanceDistance,
+                    "The deterministic simulation must share the runtime finish clearance rule.");
+            }
+        }
+    }
+
+    [UnityTest]
     public IEnumerator RunnerVisualsExposeDistinctPosesAndBoundedEffects()
     {
         GameObject runner = new GameObject("Visual Rig Test Runner");
@@ -545,6 +583,28 @@ public sealed class EndlessRunnerSmokeTests
         Assert.AreEqual("EXIT", exitButton.GetComponentInChildren<Text>().text);
 
         hud.Render(new RunnerHudViewModel(
+            RunnerHudMode.Start,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0f,
+            0,
+            0f,
+            null,
+            0f,
+            false,
+            true));
+        Assert.IsTrue(hud.LevelSelectButtons[0].gameObject.activeInHierarchy);
+        Assert.AreEqual("LEVEL 3", hud.LevelSelectButtons[2].GetComponentInChildren<Text>().text);
+        hud.LevelSelectButtons[2].onClick.Invoke();
+        yield return null;
+        Assert.IsTrue(game.IsPlaying);
+        Assert.AreEqual(3, game.ActiveLevelNumber, "Debug level selection should start the requested level directly.");
+
+        hud.Render(new RunnerHudViewModel(
             RunnerHudMode.Playing,
             0,
             0,
@@ -783,6 +843,7 @@ public sealed class EndlessRunnerSmokeTests
         Assert.AreEqual(3, RunnerLevelCatalog.Levels.Count);
         Assert.AreEqual(3, RunnerLevelCatalog.LivesPerLevel);
         Assert.AreEqual(2, RunnerLevelCatalog.CheckpointCount);
+        float[] expectedTargetDistances = { 360f, 520f, 720f };
 
         float previousStartingSpeed = 0f;
         float previousMaximumSpeed = 0f;
@@ -793,6 +854,7 @@ public sealed class EndlessRunnerSmokeTests
             RunnerRunSimulationResult result = RunnerRunSimulator.Simulate(level);
 
             Assert.AreEqual(index + 1, level.Number);
+            Assert.AreEqual(expectedTargetDistances[index], level.TargetDistance, 0.001f);
             Assert.Greater(level.TargetDistance, RunnerRunTuning.TutorialSlideZ);
             Assert.AreEqual(level.TargetDistance / 3f, level.CheckpointDistance(1), 0.001f);
             Assert.AreEqual(level.TargetDistance * 2f / 3f, level.CheckpointDistance(2), 0.001f);
@@ -822,9 +884,16 @@ public sealed class EndlessRunnerSmokeTests
         float checkpointDistance = RunnerLevelCatalog.Levels[0].CheckpointDistance(1);
 
         game.TakeHitForTests();
-        Assert.IsTrue(game.IsPlaying, "The first hit must not end the level.");
+        Assert.IsTrue(game.IsAwaitingRecovery, "A hit should wait for player confirmation.");
+        Assert.IsFalse(game.IsPlaying, "A hit must not restart from the checkpoint automatically.");
         Assert.AreEqual(2, game.RemainingLives);
+        Assert.Greater(game.Distance, checkpointDistance);
+        yield return null;
+        Assert.AreEqual("CONTINUE", game.Hud.PrimaryButton.GetComponentInChildren<Text>().text);
+        game.Hud.PrimaryButton.onClick.Invoke();
+        Assert.IsTrue(game.IsPlaying);
         Assert.AreEqual(checkpointDistance, game.Distance, 0.001f);
+        yield return null;
 
         game.AdvanceWorldForTests(game.RecoverySafetyDistance - 0.5f);
         game.CheckObstacleHitsForTests();
@@ -832,8 +901,12 @@ public sealed class EndlessRunnerSmokeTests
         Assert.AreEqual(2, game.RemainingLives);
 
         game.TakeHitForTests();
-        Assert.IsTrue(game.IsPlaying, "The second hit must not end the level.");
+        Assert.IsTrue(game.IsAwaitingRecovery, "The second hit should also wait for confirmation.");
         Assert.AreEqual(1, game.RemainingLives);
+        yield return null;
+        game.Hud.PrimaryButton.onClick.Invoke();
+        Assert.IsTrue(game.IsPlaying);
+        yield return null;
 
         game.TakeHitForTests();
         Assert.IsFalse(game.IsPlaying, "The third hit should fail the current level.");
@@ -848,7 +921,10 @@ public sealed class EndlessRunnerSmokeTests
         Assert.Less(game.Distance, checkpointDistance + 1f);
 
         game.AdvanceWorldForTests(game.LevelTargetDistance);
-        Assert.IsTrue(game.IsLevelComplete, "Reaching the finite target should celebrate a level clear.");
+        Assert.IsTrue(game.IsCelebrating, "Reaching the target should begin a temporary celebration.");
+        Assert.IsFalse(game.IsLevelComplete, "The result panel must not appear on the finish frame.");
+        game.AdvanceCelebrationForTests(1.7f);
+        Assert.IsTrue(game.IsLevelComplete, "The level result should follow the celebration pause.");
         yield return null;
         game.Hud.PrimaryButton.onClick.Invoke();
         yield return null;
@@ -1006,6 +1082,7 @@ public sealed class EndlessRunnerSmokeTests
         yield return null;
 
         EndlessRunnerGame game = Object.FindObjectOfType<EndlessRunnerGame>();
+        int initialCreatedCubeCount = game.TotalCreatedCubeCount;
         AudioSource[] initialAudioSources = game.GetComponents<AudioSource>();
         AudioClip[] initialMusicClips = new AudioClip[ProceduralRunnerMusic.LayerCount];
         for (int layerIndex = 0; layerIndex < initialMusicClips.Length; layerIndex++)
@@ -1037,7 +1114,10 @@ public sealed class EndlessRunnerSmokeTests
         Assert.Greater(game.PooledObstacleRootCount, 0, "Repeated levels should recycle obstacle roots.");
         Assert.Less(game.ActiveWorldCubeCount, 380, "Active geometry should stay bounded by the look-ahead window.");
         Assert.Less(game.ActiveObstacleCount, 60, "Active obstacles should stay bounded by the look-ahead window.");
-        Assert.Less(game.TotalCreatedCubeCount, 620, "Pooling should cap total runtime cube creation.");
+        Assert.Less(
+            game.TotalCreatedCubeCount - initialCreatedCubeCount,
+            620,
+            "Pooling should cap cube creation added by repeated level runs.");
         Assert.LessOrEqual(
             game.TotalCreatedCubeCount - warmCreatedCubeCount,
             50,

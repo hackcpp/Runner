@@ -13,6 +13,8 @@ public sealed class RunnerMediaCapture : MonoBehaviour
     private const int CaptureLevelNumber = 3;
     private const int FrameRate = 24;
     private const int CaptureFrameCount = FrameRate * 18;
+    private const int LevelClearCaptureFrameCount = FrameRate * 5;
+    private const float LevelClearLeadDistance = 0.5f;
     private const float LaneDecisionDistance = 7f;
     private const float JumpDecisionDistance = 4.2f;
     private const float SlideDecisionDistance = 3.8f;
@@ -24,14 +26,17 @@ public sealed class RunnerMediaCapture : MonoBehaviour
     private IReadOnlyList<int> lanePath;
     private string outputDirectory;
     private string framesDirectory;
+    private string levelClearFramesDirectory;
     private string screenshotsDirectory;
     private int nextRowIndex;
     private int actionRequestedRowIndex = -1;
     private int capturedFrameCount;
+    private int capturedLevelClearFrameCount;
     private bool captureStarted;
     private bool levelScreenshotCaptured;
     private bool checkpointScreenshotCaptured;
     private bool clearScreenshotCaptured;
+    private bool levelClearTransitionCompleted;
 
     public static void AttachIfRequested(GameObject host, EndlessRunnerGame runnerGame)
     {
@@ -74,8 +79,10 @@ public sealed class RunnerMediaCapture : MonoBehaviour
     private IEnumerator Start()
     {
         framesDirectory = Path.Combine(outputDirectory, "frames");
+        levelClearFramesDirectory = Path.Combine(outputDirectory, "level-clear-frames");
         screenshotsDirectory = Path.Combine(outputDirectory, "screenshots");
         Directory.CreateDirectory(framesDirectory);
+        Directory.CreateDirectory(levelClearFramesDirectory);
         Directory.CreateDirectory(screenshotsDirectory);
 
         Screen.SetResolution(1920, 1080, false);
@@ -110,18 +117,31 @@ public sealed class RunnerMediaCapture : MonoBehaviour
         }
 
         captureStarted = false;
-        Time.captureFramerate = 0;
         for (int frame = 0; frame < 30; frame++)
         {
             yield return null;
         }
 
         yield return CaptureStoreScreenshots();
-        string error = capturedFrameCount != CaptureFrameCount
-            ? "The automated run ended before all frames were captured."
-            : levelScreenshotCaptured && checkpointScreenshotCaptured && clearScreenshotCaptured
-                ? null
-                : "One or more level screenshots were not written.";
+        yield return CaptureLevelClearTransition();
+        Time.captureFramerate = 0;
+        string error = null;
+        if (capturedFrameCount != CaptureFrameCount)
+        {
+            error = "The automated run ended before all frames were captured.";
+        }
+        else if (capturedLevelClearFrameCount != LevelClearCaptureFrameCount)
+        {
+            error = "The level clear transition ended before all frames were captured.";
+        }
+        else if (!levelClearTransitionCompleted)
+        {
+            error = "The level clear transition did not reach campaign completion.";
+        }
+        else if (!levelScreenshotCaptured || !checkpointScreenshotCaptured || !clearScreenshotCaptured)
+        {
+            error = "One or more level screenshots were not written.";
+        }
         WriteManifest(error);
         Application.Quit(string.IsNullOrEmpty(error) ? 0 : 3);
     }
@@ -173,11 +193,7 @@ public sealed class RunnerMediaCapture : MonoBehaviour
 
     private void CaptureCurrentFrame()
     {
-        string framePath = Path.Combine(
-            framesDirectory,
-            string.Format(CultureInfo.InvariantCulture, "frame-{0:D4}.png", capturedFrameCount));
-        ScreenCapture.CaptureScreenshot(framePath);
-
+        CaptureFrame(framesDirectory, capturedFrameCount);
     }
 
     private IEnumerator CaptureStoreScreenshots()
@@ -199,6 +215,39 @@ public sealed class RunnerMediaCapture : MonoBehaviour
         clearScreenshotCaptured = CaptureScreenshot("03-level-clear.png");
     }
 
+    private IEnumerator CaptureLevelClearTransition()
+    {
+        RunnerLevelDefinition captureLevel = RunnerLevelCatalog.Levels[CaptureLevelNumber - 1];
+        game.StartLevelForTests(CaptureLevelNumber, captureLevel.Seed);
+        game.AdvanceWorldForTests(captureLevel.TargetDistance - LevelClearLeadDistance);
+        nextRowIndex = 0;
+        actionRequestedRowIndex = -1;
+        while (nextRowIndex < rows.Count && game.Distance > rows[nextRowIndex].Z + 0.9f)
+        {
+            nextRowIndex++;
+        }
+
+        captureStarted = true;
+        while (capturedLevelClearFrameCount < LevelClearCaptureFrameCount &&
+               (game.IsPlaying || game.IsCelebrating || game.IsCampaignComplete))
+        {
+            yield return EndOfFrame;
+            CaptureFrame(levelClearFramesDirectory, capturedLevelClearFrameCount);
+            capturedLevelClearFrameCount++;
+        }
+
+        captureStarted = false;
+        levelClearTransitionCompleted = game.IsCampaignComplete;
+    }
+
+    private static void CaptureFrame(string directory, int frameIndex)
+    {
+        string framePath = Path.Combine(
+            directory,
+            string.Format(CultureInfo.InvariantCulture, "frame-{0:D4}.png", frameIndex));
+        ScreenCapture.CaptureScreenshot(framePath);
+    }
+
     private bool CaptureScreenshot(string fileName)
     {
         ScreenCapture.CaptureScreenshot(Path.Combine(screenshotsDirectory, fileName));
@@ -209,10 +258,11 @@ public sealed class RunnerMediaCapture : MonoBehaviour
     {
         string manifest = string.Format(
             CultureInfo.InvariantCulture,
-            "level={0}\nframeRate={1}\nframes={2}\nlevelScreenshot={3}\ncheckpointScreenshot={4}\nclearScreenshot={5}\nerror={6}\n",
+            "level={0}\nframeRate={1}\nframes={2}\nlevelClearFrames={3}\nlevelScreenshot={4}\ncheckpointScreenshot={5}\nclearScreenshot={6}\nerror={7}\n",
             CaptureLevelNumber,
             FrameRate,
             capturedFrameCount,
+            capturedLevelClearFrameCount,
             levelScreenshotCaptured,
             checkpointScreenshotCaptured,
             clearScreenshotCaptured,

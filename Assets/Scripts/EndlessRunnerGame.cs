@@ -9,6 +9,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         StartScreen,
         Playing,
+        Celebrating,
+        Recovering,
         Paused,
         GameOver,
         LevelComplete,
@@ -35,6 +37,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private const float ObstacleLaneTolerance = 0.82f;
     private const float CheckpointRecoverySafeDistance = 16f;
     private const float FinishVisualObstacleDistance = 42f;
+    private const float LevelCelebrationDuration = 1.6f;
+    private const float CelebrationDeceleration = 12f;
     private const string BestDistanceKey = "EndlessRunner.HighScore";
     private const string BestScoreKey = "EndlessRunner.BestScore";
     private const string BestComboKey = "EndlessRunner.BestCombo";
@@ -70,6 +74,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
     private Material roadMaterial;
     private Material laneMaterial;
+    private Material finishWhiteMaterial;
     private Material edgeMaterial;
     private Material playerMaterial;
     private Material playerAccentMaterial;
@@ -106,6 +111,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private float laneHintTimer;
     private float actionHintTimer;
     private float actionFeedbackTimer;
+    private float celebrationTimer;
     private string actionHintSymbol;
     private bool jumpHintShown;
     private bool slideHintShown;
@@ -135,8 +141,27 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     public int CheckpointIndex => checkpointIndex;
     public float LevelTargetDistance => ActiveLevel.TargetDistance;
     public float RecoverySafetyDistance => CheckpointRecoverySafeDistance;
+    public int FinishClearanceObstacleCount
+    {
+        get
+        {
+            int count = 0;
+            for (int index = 0; index < obstacles.Count; index++)
+            {
+                if (Mathf.Abs(obstacles[index].Z - ActiveLevel.TargetDistance) <
+                    RunnerRunTuning.FinishLineClearanceDistance)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+    }
     public bool IsPlaying => state == GameState.Playing;
     public bool IsPaused => state == GameState.Paused;
+    public bool IsCelebrating => state == GameState.Celebrating;
+    public bool IsAwaitingRecovery => state == GameState.Recovering;
     public bool IsLevelComplete => state == GameState.LevelComplete;
     public bool IsCampaignComplete => state == GameState.CampaignComplete;
     public bool ExitRequested { get; private set; }
@@ -171,7 +196,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             PauseRun,
             ResumeRun,
             HandlePrimaryAction,
-            RequestExit);
+            RequestExit,
+            BeginDebugLevel);
         touchInput = RunnerTouchInput.AttachTo(gameObject, runnerMotor);
         ResetRun(GameState.StartScreen);
         RunnerMediaCapture.AttachIfRequested(gameObject, this);
@@ -189,6 +215,27 @@ public sealed class EndlessRunnerGame : MonoBehaviour
 
         if (state == GameState.StartScreen)
         {
+            if (CanSelectDebugLevel())
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1))
+                {
+                    BeginDebugLevel(1);
+                    return;
+                }
+
+                if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2))
+                {
+                    BeginDebugLevel(2);
+                    return;
+                }
+
+                if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
+                {
+                    BeginDebugLevel(3);
+                    return;
+                }
+            }
+
             if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return))
             {
                 BeginCampaign();
@@ -210,6 +257,19 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             return;
         }
 
+        if (state == GameState.Recovering)
+        {
+            if (Input.GetKeyDown(KeyCode.Space) ||
+                Input.GetKeyDown(KeyCode.Return) ||
+                Input.GetKeyDown(KeyCode.R))
+            {
+                ContinueAfterHit();
+            }
+
+            UpdateCamera();
+            return;
+        }
+
         if (state == GameState.LevelComplete || state == GameState.CampaignComplete)
         {
             if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return))
@@ -217,6 +277,13 @@ public sealed class EndlessRunnerGame : MonoBehaviour
                 HandlePrimaryAction();
             }
 
+            UpdateCamera();
+            return;
+        }
+
+        if (state == GameState.Celebrating)
+        {
+            UpdateCelebration(Time.deltaTime);
             UpdateCamera();
             return;
         }
@@ -282,6 +349,10 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         {
             RestartLevelFromCheckpoint();
         }
+        else if (state == GameState.Recovering)
+        {
+            ContinueAfterHit();
+        }
         else if (state == GameState.LevelComplete)
         {
             activeLevelIndex++;
@@ -293,6 +364,22 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     {
         activeLevelIndex = 0;
         ResetRun(GameState.Playing);
+    }
+
+    private void BeginDebugLevel(int levelNumber)
+    {
+        if (!CanSelectDebugLevel())
+        {
+            return;
+        }
+
+        activeLevelIndex = Mathf.Clamp(levelNumber - 1, 0, RunnerLevelCatalog.Levels.Count - 1);
+        ResetRun(GameState.Playing);
+    }
+
+    private static bool CanSelectDebugLevel()
+    {
+        return Debug.isDebugBuild && !Application.isMobilePlatform;
     }
 
     public void TakeHitForTests()
@@ -308,6 +395,14 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         if (state == GameState.Playing)
         {
             CheckObstacleHits();
+        }
+    }
+
+    public void AdvanceCelebrationForTests(float seconds)
+    {
+        if (state == GameState.Celebrating && seconds > 0f)
+        {
+            UpdateCelebration(seconds);
         }
     }
 
@@ -368,13 +463,17 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             ? RunnerHudMode.Start
             : state == GameState.Playing
                 ? RunnerHudMode.Playing
-                : state == GameState.Paused
-                    ? RunnerHudMode.Paused
-                    : state == GameState.LevelComplete
-                        ? RunnerHudMode.LevelComplete
-                        : state == GameState.CampaignComplete
-                            ? RunnerHudMode.CampaignComplete
-                            : RunnerHudMode.GameOver;
+                : state == GameState.Celebrating
+                    ? RunnerHudMode.Celebrating
+                    : state == GameState.Recovering
+                        ? RunnerHudMode.Recovering
+                        : state == GameState.Paused
+                            ? RunnerHudMode.Paused
+                            : state == GameState.LevelComplete
+                                ? RunnerHudMode.LevelComplete
+                                : state == GameState.CampaignComplete
+                                    ? RunnerHudMode.CampaignComplete
+                                    : RunnerHudMode.GameOver;
 
         string hintSymbol = null;
         float hintAlpha = 0f;
@@ -410,13 +509,15 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             Mathf.FloorToInt(ActiveLevel.TargetDistance),
             remainingLives,
             RunnerLevelCatalog.LivesPerLevel,
-            checkpointIndex));
+            checkpointIndex,
+            CanSelectDebugLevel()));
     }
 
     private void CreateMaterials()
     {
         roadMaterial = CreateMaterial("Rooftop Surface", new Color(0.16f, 0.17f, 0.19f), 0f, 0f, 0.1f);
         laneMaterial = CreateMaterial("Signal Gold", new Color(0.96f, 0.72f, 0.18f), 0.18f, 0.05f, 0.22f);
+        finishWhiteMaterial = CreateMaterial("Finish White", new Color(0.94f, 0.96f, 0.98f), 0.12f, 0f, 0.18f);
         edgeMaterial = CreateMaterial("Deep Graphite", new Color(0.07f, 0.09f, 0.11f), 0f, 0.05f, 0.12f);
         playerMaterial = CreateMaterial("Player", RunnerColor, 0f, 0.05f, 0.32f);
         playerAccentMaterial = CreateMaterial("Player Accent", new Color(1f, 0.86f, 0.52f), 0.1f, 0.05f, 0.4f);
@@ -673,6 +774,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             : 0f;
         actionHintTimer = 0f;
         actionFeedbackTimer = 0f;
+        celebrationTimer = 0f;
         cameraRig.ResetFeedback();
         actionHintSymbol = null;
         jumpHintShown = false;
@@ -825,8 +927,38 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             return false;
         }
 
-        CompleteLevel();
+        BeginLevelCelebration();
         return true;
+    }
+
+    private void BeginLevelCelebration()
+    {
+        state = GameState.Celebrating;
+        celebrationTimer = LevelCelebrationDuration;
+        actionHintTimer = 0f;
+        actionFeedbackTimer = 0f;
+        playerMaterial.color = RunnerColor;
+        playerVisualRoot.transform.localRotation = Quaternion.identity;
+        actionParticles.transform.position = player.transform.position + new Vector3(0f, 1.1f, 0f);
+        actionParticles.Emit(activeLevelIndex >= RunnerLevelCatalog.Levels.Count - 1 ? 72 : 48);
+        cameraRig.PulseFieldOfView(activeLevelIndex >= RunnerLevelCatalog.Levels.Count - 1 ? 2.4f : 1.6f);
+        cameraRig.TriggerImpact(0.12f, 0.8f);
+        soundEffects.PlayClear(RunnerComboTracker.MaximumMultiplier);
+        music.TriggerDuck();
+    }
+
+    private void UpdateCelebration(float deltaTime)
+    {
+        float step = Mathf.Max(0f, deltaTime);
+        currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, CelebrationDeceleration * step);
+        player.transform.position += Vector3.forward * currentSpeed * step;
+        runnerVisualRig.Tick(currentSpeed, currentSpeed > 0.1f, step);
+        runnerMotionEffects.Tick(currentSpeed, currentSpeed > 0.1f, step);
+        celebrationTimer = Mathf.Max(0f, celebrationTimer - step);
+        if (celebrationTimer <= 0f)
+        {
+            CompleteLevel();
+        }
     }
 
     private void AnimateIdlePlayer()
@@ -897,7 +1029,9 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private void CreateObstacleMask(RunnerObstacleKind kind, int laneMask, float z)
     {
         if (z > ActiveLevel.TargetDistance + FinishVisualObstacleDistance ||
-            z < obstacleGenerationMinimumZ)
+            z < obstacleGenerationMinimumZ ||
+            Mathf.Abs(z - ActiveLevel.TargetDistance) <
+            RunnerRunTuning.FinishLineClearanceDistance)
         {
             return;
         }
@@ -961,6 +1095,47 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             roofSeamMaterial);
 
         CreatePlayableRoofFixture(segmentIndex, centerZ);
+
+        float segmentStartZ = segmentIndex * SegmentLength;
+        if (ActiveLevel.TargetDistance >= segmentStartZ &&
+            ActiveLevel.TargetDistance < segmentStartZ + SegmentLength)
+        {
+            CreateFinishLine(ActiveLevel.TargetDistance);
+        }
+    }
+
+    private void CreateFinishLine(float z)
+    {
+        const int columnCount = 12;
+        const int rowCount = 2;
+        const float tileWidth = 0.62f;
+        const float tileDepth = 0.44f;
+
+        for (int row = 0; row < rowCount; row++)
+        {
+            for (int column = 0; column < columnCount; column++)
+            {
+                float x = (column - (columnCount - 1) * 0.5f) * tileWidth;
+                float tileZ = z + (row - (rowCount - 1) * 0.5f) * tileDepth;
+                CreateTrackedCube(
+                    roadSegments,
+                    "Finish Line Tile " + row + " " + column,
+                    new Vector3(x, 0.046f, tileZ),
+                    new Vector3(tileWidth, 0.038f, tileDepth),
+                    (row + column) % 2 == 0 ? finishWhiteMaterial : edgeMaterial);
+            }
+        }
+
+        float borderOffset = rowCount * tileDepth * 0.5f + 0.08f;
+        for (int side = -1; side <= 1; side += 2)
+        {
+            CreateTrackedCube(
+                roadSegments,
+                side < 0 ? "Finish Line Near Border" : "Finish Line Far Border",
+                new Vector3(0f, 0.05f, z + side * borderOffset),
+                new Vector3(columnCount * tileWidth, 0.045f, 0.12f),
+                laneMaterial);
+        }
     }
 
     private void CreatePlayableRoofFixture(int segmentIndex, float centerZ)
@@ -1353,7 +1528,21 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             return;
         }
 
+        state = GameState.Recovering;
+        runnerMotor.FreezeVisuals();
+        music.SetState(RunnerMusicState.GameOver);
+    }
+
+    private void ContinueAfterHit()
+    {
+        if (state != GameState.Recovering)
+        {
+            return;
+        }
+
+        state = GameState.Playing;
         RestoreCheckpoint(checkpointIndex, true);
+        UpdateMusicIntensity();
     }
 
     private void CompleteLevel()
@@ -1361,15 +1550,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
         RecordBestRun();
         bool completedCampaign = activeLevelIndex >= RunnerLevelCatalog.Levels.Count - 1;
         state = completedCampaign ? GameState.CampaignComplete : GameState.LevelComplete;
-        playerMaterial.color = RunnerColor;
-        playerVisualRoot.transform.localRotation = Quaternion.identity;
-        actionParticles.transform.position = player.transform.position + new Vector3(0f, 1.1f, 0f);
-        actionParticles.Emit(completedCampaign ? 72 : 48);
-        cameraRig.PulseFieldOfView(completedCampaign ? 2.4f : 1.6f);
-        cameraRig.TriggerImpact(0.12f, 0.8f);
-        soundEffects.PlayClear(RunnerComboTracker.MaximumMultiplier);
         music.SetState(RunnerMusicState.Menu);
-        music.TriggerDuck();
     }
 
     private void FailLevel()
@@ -1569,7 +1750,8 @@ public sealed class EndlessRunnerGame : MonoBehaviour
     private void UpdateCamera(bool snap = false)
     {
         Vector3 playerPosition = player.transform.position;
-        float speedAmount = state == GameState.Playing
+        bool moving = state == GameState.Playing || state == GameState.Celebrating;
+        float speedAmount = moving
             ? Mathf.InverseLerp(StartingSpeed, RunnerPatternCatalog.MaximumRunnerSpeed, currentSpeed)
             : 0f;
         float laneTargetX = runnerMotor == null ? playerPosition.x : LaneX(runnerMotor.Lane);
@@ -1577,7 +1759,7 @@ public sealed class EndlessRunnerGame : MonoBehaviour
             playerPosition,
             laneTargetX,
             speedAmount,
-            state == GameState.Playing,
+            moving,
             snap);
     }
 

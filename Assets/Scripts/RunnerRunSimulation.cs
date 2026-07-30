@@ -8,6 +8,7 @@ public static class RunnerRunTuning
     public const float StartingSpeed = 9.4f;
     public const float SpeedAcceleration = 0.16f;
     public const float LookAheadDistance = 90f;
+    public const float FinishLineClearanceDistance = 3f;
     public const float FirstRandomPatternZ = 96f;
     public const float TutorialLaneChangeZ = 28f;
     public const float TutorialJumpZ = 48f;
@@ -681,7 +682,7 @@ public static class RunnerRunSimulator
         {
             RunnerPatternElement element = pattern.Elements[elementIndex];
             float z = startZ + element.ZOffset;
-            if (z <= targetDistance + 0.001f)
+            if (z <= targetDistance - RunnerRunTuning.FinishLineClearanceDistance)
             {
                 AddObstacleMask(obstacles, obstacleCounts, element.Kind, element.LaneMask, z);
             }

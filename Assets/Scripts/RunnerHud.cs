@@ -7,6 +7,8 @@ public enum RunnerHudMode
 {
     Start,
     Playing,
+    Celebrating,
+    Recovering,
     Paused,
     GameOver,
     LevelComplete,
@@ -28,7 +30,8 @@ public readonly struct RunnerHudViewModel
         float feedbackAlpha,
         string hintSymbol,
         float hintAlpha,
-        bool touchControls)
+        bool touchControls,
+        bool allowLevelSelection = false)
         : this(
             mode,
             score,
@@ -48,7 +51,8 @@ public readonly struct RunnerHudViewModel
             0,
             RunnerLevelCatalog.LivesPerLevel,
             RunnerLevelCatalog.LivesPerLevel,
-            0)
+            0,
+            allowLevelSelection)
     {
     }
 
@@ -71,7 +75,8 @@ public readonly struct RunnerHudViewModel
         int targetDistance,
         int lives,
         int maximumLives,
-        int checkpointNumber)
+        int checkpointNumber,
+        bool allowLevelSelection = false)
     {
         Mode = mode;
         Score = score;
@@ -92,6 +97,7 @@ public readonly struct RunnerHudViewModel
         Lives = lives;
         MaximumLives = maximumLives;
         CheckpointNumber = checkpointNumber;
+        AllowLevelSelection = allowLevelSelection;
     }
 
     public RunnerHudMode Mode { get; }
@@ -113,6 +119,7 @@ public readonly struct RunnerHudViewModel
     public int Lives { get; }
     public int MaximumLives { get; }
     public int CheckpointNumber { get; }
+    public bool AllowLevelSelection { get; }
 }
 
 public sealed class RunnerHud : MonoBehaviour
@@ -143,6 +150,7 @@ public sealed class RunnerHud : MonoBehaviour
     private Action resumeAction;
     private Action restartAction;
     private Action exitAction;
+    private Action<int> selectLevelAction;
     private RunnerHudMode currentMode;
     private Font font;
     private GameObject overlayRoot;
@@ -162,6 +170,8 @@ public sealed class RunnerHud : MonoBehaviour
     private Button pauseButton;
     private Button primaryButton;
     private Button exitButton;
+    private RectTransform levelSelectRoot;
+    private readonly Button[] levelSelectButtons = new Button[3];
     private RectTransform gestureGuideRoot;
     private RectTransform gestureFinger;
     private Image gestureTrail;
@@ -178,6 +188,7 @@ public sealed class RunnerHud : MonoBehaviour
     public Button PauseButton => pauseButton;
     public Button PrimaryButton => primaryButton;
     public Button ExitButton => exitButton;
+    public Button[] LevelSelectButtons => levelSelectButtons;
     public RectTransform GestureGuideRoot => gestureGuideRoot;
     public RectTransform GestureFinger => gestureFinger;
     public Image GestureTrail => gestureTrail;
@@ -192,7 +203,8 @@ public sealed class RunnerHud : MonoBehaviour
         Action onPause,
         Action onResume,
         Action onRestart,
-        Action onExit)
+        Action onExit,
+        Action<int> onSelectLevel)
     {
         RunnerHud hud = host.GetComponent<RunnerHud>();
         if (hud == null)
@@ -200,7 +212,7 @@ public sealed class RunnerHud : MonoBehaviour
             hud = host.AddComponent<RunnerHud>();
         }
 
-        hud.Initialize(onStart, onPause, onResume, onRestart, onExit);
+        hud.Initialize(onStart, onPause, onResume, onRestart, onExit, onSelectLevel);
         return hud;
     }
 
@@ -208,11 +220,12 @@ public sealed class RunnerHud : MonoBehaviour
     {
         currentMode = model.Mode;
         bool playing = model.Mode == RunnerHudMode.Playing;
-        scoreText.gameObject.SetActive(playing);
-        distanceText.gameObject.SetActive(playing);
-        bestText.gameObject.SetActive(playing);
+        bool gameplayVisible = playing || model.Mode == RunnerHudMode.Celebrating;
+        scoreText.gameObject.SetActive(gameplayVisible);
+        distanceText.gameObject.SetActive(gameplayVisible);
+        bestText.gameObject.SetActive(gameplayVisible);
         pauseButton.gameObject.SetActive(playing);
-        if (playing)
+        if (gameplayVisible)
         {
             scoreText.text = "SCORE  " + model.Score;
             distanceText.text = "PROGRESS  " + model.Distance + " / " + model.TargetDistance + " m";
@@ -221,8 +234,8 @@ public sealed class RunnerHud : MonoBehaviour
             livesText.text = "LIVES  " + model.Lives + " / " + model.MaximumLives;
         }
 
-        levelText.gameObject.SetActive(playing);
-        livesText.gameObject.SetActive(playing);
+        levelText.gameObject.SetActive(gameplayVisible);
+        livesText.gameObject.SetActive(gameplayVisible);
 
         bool showCombo = playing && model.ComboAmount > 0f;
         comboText.gameObject.SetActive(showCombo);
@@ -234,13 +247,16 @@ public sealed class RunnerHud : MonoBehaviour
             fillTransform.anchorMax = new Vector2(Mathf.Clamp01(model.ComboAmount), 1f);
         }
 
-        bool showFeedback = playing && model.FeedbackAlpha > 0f;
+        bool celebrating = model.Mode == RunnerHudMode.Celebrating;
+        bool showFeedback = celebrating || playing && model.FeedbackAlpha > 0f;
         feedbackText.gameObject.SetActive(showFeedback);
         if (showFeedback)
         {
-            feedbackText.text = "+" + model.FeedbackPoints +
-                                (model.ComboMultiplier > 1 ? "   x" + model.ComboMultiplier : string.Empty);
-            feedbackText.color = WithAlpha(Reward, model.FeedbackAlpha);
+            feedbackText.text = celebrating
+                ? "LEVEL CLEAR"
+                : "+" + model.FeedbackPoints +
+                  (model.ComboMultiplier > 1 ? "   x" + model.ComboMultiplier : string.Empty);
+            feedbackText.color = WithAlpha(Reward, celebrating ? 1f : model.FeedbackAlpha);
         }
 
         bool showHint = playing && !string.IsNullOrEmpty(model.HintSymbol) && model.HintAlpha > 0f;
@@ -251,11 +267,15 @@ public sealed class RunnerHud : MonoBehaviour
             hintText.color = WithAlpha(Reward, model.HintAlpha);
         }
 
-        overlayRoot.SetActive(!playing);
-        if (!playing)
+        overlayRoot.SetActive(!gameplayVisible);
+        if (!gameplayVisible)
         {
             RenderOverlay(model);
         }
+
+        bool showLevelSelection = model.Mode == RunnerHudMode.Start && model.AllowLevelSelection;
+        levelSelectRoot.gameObject.SetActive(showLevelSelection);
+        exitButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, showLevelSelection ? -276f : -194f);
 
         SetGestureGuideVisible(model.Mode == RunnerHudMode.Start && model.TouchControls);
     }
@@ -288,13 +308,15 @@ public sealed class RunnerHud : MonoBehaviour
         Action onPause,
         Action onResume,
         Action onRestart,
-        Action onExit)
+        Action onExit,
+        Action<int> onSelectLevel)
     {
         startAction = onStart;
         pauseAction = onPause;
         resumeAction = onResume;
         restartAction = onRestart;
         exitAction = onExit;
+        selectLevelAction = onSelectLevel;
         if (scoreText != null)
         {
             return;
@@ -498,6 +520,29 @@ public sealed class RunnerHud : MonoBehaviour
         primaryButton.onClick.AddListener(HandlePrimaryButton);
         primaryButtonLabel = primaryButton.GetComponentInChildren<Text>();
 
+        GameObject levelSelectObject = new GameObject("Debug Level Selection", typeof(RectTransform));
+        levelSelectObject.transform.SetParent(overlaySafeArea, false);
+        levelSelectRoot = levelSelectObject.GetComponent<RectTransform>();
+        levelSelectRoot.anchorMin = new Vector2(0.5f, 0.5f);
+        levelSelectRoot.anchorMax = new Vector2(0.5f, 0.5f);
+        levelSelectRoot.pivot = new Vector2(0.5f, 0.5f);
+        levelSelectRoot.anchoredPosition = new Vector2(0f, -194f);
+        levelSelectRoot.sizeDelta = new Vector2(540f, 52f);
+
+        for (int index = 0; index < levelSelectButtons.Length; index++)
+        {
+            int levelNumber = index + 1;
+            Button levelButton = CreateButton(
+                levelSelectRoot,
+                "Start Level " + levelNumber,
+                new Vector2((index - 1) * 180f, 0f),
+                new Vector2(164f, 52f),
+                true);
+            levelButton.GetComponentInChildren<Text>().text = "LEVEL " + levelNumber;
+            levelButton.onClick.AddListener(() => HandleLevelSelectButton(levelNumber));
+            levelSelectButtons[index] = levelButton;
+        }
+
         exitButton = CreateButton(
             overlaySafeArea,
             "Exit Game",
@@ -525,6 +570,16 @@ public sealed class RunnerHud : MonoBehaviour
             panelScore.text = "SCORE  " + model.Score;
             panelDetails.text = "DISTANCE  " + model.Distance + " m";
             primaryButtonLabel.text = "RESUME";
+            return;
+        }
+
+        if (model.Mode == RunnerHudMode.Recovering)
+        {
+            panelTitle.text = "LIFE LOST";
+            panelScore.text = "LIVES  " + model.Lives + " / " + model.MaximumLives;
+            panelDetails.text = "CHECKPOINT  " + model.CheckpointNumber + " / " + RunnerLevelCatalog.CheckpointCount +
+                                "    DISTANCE  " + model.Distance + " m";
+            primaryButtonLabel.text = "CONTINUE";
             return;
         }
 
@@ -702,7 +757,8 @@ public sealed class RunnerHud : MonoBehaviour
         {
             resumeAction?.Invoke();
         }
-        else if (currentMode == RunnerHudMode.GameOver ||
+        else if (currentMode == RunnerHudMode.Recovering ||
+                 currentMode == RunnerHudMode.GameOver ||
                  currentMode == RunnerHudMode.LevelComplete ||
                  currentMode == RunnerHudMode.CampaignComplete)
         {
@@ -723,6 +779,14 @@ public sealed class RunnerHud : MonoBehaviour
         if (currentMode != RunnerHudMode.Playing)
         {
             exitAction?.Invoke();
+        }
+    }
+
+    private void HandleLevelSelectButton(int levelNumber)
+    {
+        if (currentMode == RunnerHudMode.Start && levelSelectRoot.gameObject.activeInHierarchy)
+        {
+            selectLevelAction?.Invoke(levelNumber);
         }
     }
 
