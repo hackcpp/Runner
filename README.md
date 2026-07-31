@@ -347,7 +347,7 @@ PlayMode Test Runner 会在测试结束后自行退出；不要为该命令添�
 
 当前 TapTap 开发者后台提供 Android、TapTap Windows 和 Steam 配置，没有独立 macOS 包上传入口。因此当前上架主线使用 Android Release APK；Mac 只保留本地 Debug `.app`，不生成发布 ZIP。
 
-商店名称、定位文案、上传素材和发布清单统一保存在本地 `Distribution/TapTap/`。根目录 `Distribution/` 是不提交到 GitHub 的发布工作区，已由 `.gitignore` 整体排除。正式隐私政策由仓库中的 `docs/privacy/index.html` 提供，并通过 [GitHub Pages](https://hackcpp.github.io/Runner/privacy/) 公开访问。
+商店名称、定位文案、上传素材和发布清单统一保存在本地 `Distribution/TapTap/`。根目录 `Distribution/` 是不提交到 GitHub 的发布工作区，已由 `.gitignore` 整体排除。正式隐私政策由仓库中的 `docs/privacy/index.html` 提供，并通过 [GitHub Pages](https://hackcpp.github.io/Runner/privacy/) 公开访问；正文按 TapTap 官方模板结构结合当前 APK 实际能力编写，不适用的数据处理条款明确标注为未收集或未使用。
 
 三类视觉资源的职责固定如下：
 
@@ -422,7 +422,7 @@ com.hackcpp.rooftoprunner
 - 未成年人防沉迷系统和接入视频证明；后台提示 APK 测试或下载需要提供。
 - Android 签名材料离机备份，以及正确的平台、类型、包名配置。
 - 已生成的 3 张 `1920x1080` 横屏实机截图、18 秒 H.264 视频和 `1920x1080` 标题宣传图需要在 Android 真机对照后手动上传。
-- 隐私政策已填写发布主体、联系邮箱和生效日期，并部署为公开 HTTPS 页面。
+- 隐私政策已填写发布主体、联系邮箱和生效日期，按 TapTap 模板补齐 Cookie、共享转让、第三方 SDK、保存期限、用户权利、未成年人保护和法定例外，并部署为公开 HTTPS 页面。
 
 完整尺寸、格式和渠道清单见本地文件 `Distribution/TapTap/MATERIAL_CHECKLIST.md`。
 
