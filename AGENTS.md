@@ -275,6 +275,12 @@ Unity Editor 打开期间不要删除 `Library`、`Temp`、`Logs` 或 `UserSetti
 - 未经明确要求不创建提交、不推送、不创建 PR。
 - 用户要求直推 `main` 时不创建 PR，不使用 force push，并在推送前确认远端没有并发更新。
 - 发布后校验远端 tree 与本地提交 tree 一致。
+- 提交信息遵循 Conventional Commits，格式为 `<type>(<scope>): <description>`；不需要 scope 时可写为 `<type>: <description>`。
+- `type` 使用小写标准类型：`feat`、`fix`、`docs`、`test`、`refactor`、`perf`、`build`、`ci`、`chore` 或 `revert`。
+- `scope` 使用简短、稳定的小写模块名，例如 `gameplay`、`levels`、`android`、`taptap` 或 `roadmap`；不要把文件名或临时任务编号当作 scope。
+- `description` 使用英文祈使语气，首字母小写，不以句号结尾，整行尽量不超过 72 个字符。
+- 每个提交只包含一个逻辑关注点；代码、测试和直接相关文档应在同一提交中，独立的路线图 SHA 回填使用后续 `docs(roadmap)` 提交。
+- 只有不兼容变更才使用 `<type>(<scope>)!:`，并在提交正文中增加 `BREAKING CHANGE: <说明>`；普通功能调整不得标记为破坏性变更。
 
 ## 完成检查
 
