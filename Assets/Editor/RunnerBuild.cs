@@ -7,9 +7,9 @@ public static class RunnerBuild
     private const string AndroidProductName = "天台疾跑";
     private const string CompanyName = "hackcpp";
     private const string BundleIdentifier = "com.hackcpp.rooftoprunner";
-    private const string Version = "0.1.0";
+    private const string Version = "0.1.1";
     private const string AppOutputPath = "Builds/RooftopRunner.app";
-    private const string AndroidReleaseOutputPath = "Builds/RooftopRunner-android-0.1.0.apk";
+    private const string AndroidReleaseOutputPath = "Builds/RooftopRunner-android-0.1.1.apk";
     private const string AndroidReleaseKeystorePath = "Distribution/Signing/RooftopRunner-release.keystore";
     private const string AndroidReleaseKeyAlias = "rooftoprunner";
     private const string AndroidSigningKeychainService = "RooftopRunner Android Release";
@@ -78,7 +78,7 @@ public static class RunnerBuild
         Texture2D icon = ApplyCommonPlayerSettings(AndroidProductName);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, BundleIdentifier);
         PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Android, new[] { icon });
-        PlayerSettings.Android.bundleVersionCode = 1;
+        PlayerSettings.Android.bundleVersionCode = 2;
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
         PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevel35;
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;

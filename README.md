@@ -205,7 +205,7 @@ Builds/RooftopRunner.app
 Android Release 默认输出：
 
 ```text
-Builds/RooftopRunner-android-0.1.0.apk
+Builds/RooftopRunner-android-0.1.1.apk
 ```
 
 ### `Assets/Tests/PlayMode/EndlessRunnerSmokeTests.cs`
@@ -279,14 +279,14 @@ Android 构建配置：
 ```text
 Package Name: com.hackcpp.rooftoprunner
 Application Label: 天台疾跑
-Version Name: 0.1.0
-Version Code: 1
+Version Name: 0.1.1
+Version Code: 2
 Minimum API: 24 (Android 7.0)
 Target API: 35 (Android 15)
 Scripting Backend: IL2CPP
 Architecture: ARM64
 Orientation: Landscape
-Output: Builds/RooftopRunner-android-0.1.0.apk
+Output: Builds/RooftopRunner-android-0.1.1.apk
 ```
 
 Release APK 强制使用项目独立证书签名，不会回退到 Android Debug 证书。keystore 保存在本地忽略目录 `Distribution/Signing/RooftopRunner-release.keystore`，alias 为 `rooftoprunner`；密码从 macOS Keychain 服务 `RooftopRunner Android Release` 的 `storepass`、`keypass` 账户读取，也可分别通过 `ROOFTOP_RUNNER_ANDROID_STORE_PASS`、`ROOFTOP_RUNNER_ANDROID_KEY_PASS` 注入。证书 SHA-256 为 `3E:BC:01:D8:28:9F:5D:8C:AA:66:9F:F5:C8:AD:60:FA:6E:5D:6E:37:97:1F:D3:80:2E:C1:53:AF:2F:B8:A7:10`。
@@ -326,17 +326,17 @@ open -n /Users/lucas.l/Workspace/code/Runner/Builds/RooftopRunner.app --args \
 
 PlayMode Test Runner 会在测试结束后自行退出；不要为该命令添加 `-quit`，否则脚本重新导入时可能在测试启动前提前退出。
 
-当前 PlayMode 冒烟套件共 25 项，覆盖角色输入缓冲、触摸手势分类与动作分发、安全区域、明确退出入口和纯触控流程、程序化人物姿态与动作粒子、分层音乐结构与样本质量、动态混音和音频对象复用、暂停恢复、三关固定种子完整路径、三条命与检查点恢复、关卡通关推进、无物理碰撞体约束、连击计分，以及重复关卡下的世界对象池稳定性。
+当前 PlayMode 冒烟套件共 26 项，覆盖角色输入缓冲、触摸手势分类与动作分发、安全区域、明确退出入口和纯触控流程、程序化人物姿态与动作粒子、分层音乐结构与样本质量、动态混音和音频对象复用、暂停恢复、三关固定种子完整路径、三条命与检查点恢复、关卡通关推进、商店素材采集路径、无物理碰撞体约束、连击计分，以及重复关卡下的世界对象池稳定性。
 
 ### 当前验证基线
 
-- PlayMode：`25/25` 通过
+- PlayMode：`26/26` 通过
 - 程序化音乐：三层同步循环约 `30.48s`，峰值、直流偏移、循环接缝和有限样本全部通过自动化阈值
 - 音频稳定性：关卡重试、暂停、恢复及重复关卡运行后仍保持 4 个音源和 3 个音乐片段，不重复创建
 - 跑局公平性：连续验证 `5000` 个固定种子、`1200m` 基准跑局和三关固定路径，无无解序列
 - 关卡稳定性：重复第三关后，活动几何体、障碍数量和对象池容量保持有界
-- Mac Debug：`x86_64 + arm64` 通用二进制，版本 `0.1.0`，用于日常本地测试
-- Android Release：仅正式打包时生成；IL2CPP ARM64 APK，最低 API 24、目标 API 35，版本 `0.1.0`
+- Mac Debug：`x86_64 + arm64` 通用二进制，工程版本 `0.1.1`，用于日常本地测试
+- Android Release：仅正式打包时生成；IL2CPP ARM64 APK，最低 API 24、目标 API 35，Version Name `0.1.1`、VersionCode `2`
 - Android 触摸：四向滑动、触控流程按钮、安全区域、返回键和明确退出入口通过自动化及 ARM64 真机烟测
 - 签名：Mac Debug 的 `codesign --verify --deep --strict` 与 Android Release APK v2 校验通过
 - 窗口验证：`1280x720` 与 `1440x900` 下完成开始、换道、暂停、恢复、结算和退出烟测
@@ -361,7 +361,7 @@ PlayMode Test Runner 会在测试结束后自行退出；不要为该命令添�
 
 `Assets/Brand/AppIcon.png` 与 TapTap 上传图标必须使用同一画稿；两者只允许因目标平台要求存在格式、尺寸、色彩配置或透明通道差异，不能使用不同构图或风格。
 
-Android 已具备正式签名 APK 构建、横屏触控和至少一台 ARM64 真机验收能力，但正式上架仍需安全版本 Unity 重建、离机备份签名材料、隐私政策、资质与防沉迷材料；iOS 尚未适配。
+Android 已具备正式签名 APK 构建、横屏触控和至少一台 ARM64 真机验收能力。用户已接受当前 Unity 版本的 CVE-2025-59489 风险并暂缓升级；正式上架仍需离机备份签名材料以及处理平台要求的资质与防沉迷材料，后两项不纳入本轮。iOS 尚未适配。
 
 ### 1. 生成本地 Release 包
 
@@ -374,10 +374,10 @@ Runner -> Build -> Android Release APK
 默认输出：
 
 ```text
-Builds/RooftopRunner-android-0.1.0.apk
+Builds/RooftopRunner-android-0.1.1.apk
 ```
 
-当前 APK 已使用项目独立证书完成 v2 签名。正式上传前仍需升级到安全版本 Unity 后重新构建、核验签名并在真机回归。
+当前 APK 使用项目独立证书完成 v2 签名。用户已决定暂缓 Unity 安全版本升级；正式上传前仍需核验新包签名并在真机回归。
 
 ### 2. macOS 本机验包
 
@@ -413,7 +413,7 @@ com.hackcpp.rooftoprunner
 版本号：
 
 ```text
-0.1.0
+0.1.1
 ```
 
 ### 4. TapTap 上架阻塞项
@@ -437,7 +437,7 @@ Product Name: Rooftop Runner
 Android Application Label: 天台疾跑
 Company Name: hackcpp
 Bundle Identifier: com.hackcpp.rooftoprunner
-Version: 0.1.0
+Version: 0.1.1
 Icon: Assets/Brand/AppIcon.png
 ```
 

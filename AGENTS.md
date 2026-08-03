@@ -13,7 +13,7 @@ Rooftop Runner 是一个用于作品集展示的 Unity 3D 三车道关卡跑酷�
 - 目标平台：macOS
 - 输入：键盘、旧 Input API
 - 当前规划版本：`0.1.1`，用于收尾已归档的 `0.1.0`
-- 工程包体基线：`0.1.0`，在 `0.1.1` 正式构建前统一提升版本号
+- 工程包体版本：`0.1.1`，Android VersionCode：`2`
 - Bundle Identifier：`com.hackcpp.rooftoprunner`
 - 许可证：Unity Personal
 - 测试基线：PlayMode `26/26`
